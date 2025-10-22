@@ -1,0 +1,30 @@
+{
+  "name": "langgraph-101-ts",
+  "version": "1.0.0",
+  "description": "LangGraph 101 TypeScript Tutorial",
+  "type": "module",
+  "scripts": {
+    "dev": "node --experimental-modules",
+    "test": "echo \"No tests yet\""
+  },
+  "keywords": ["langchain", "langgraph", "typescript", "tutorial"],
+  "author": "LangChain",
+  "license": "MIT",
+  "dependencies": {
+    "langchain": "^1.0.0",
+    "@langchain/core": "^1.0.0",
+    "@langchain/langgraph": "^1.0.0",
+    "@langchain/openai": "^0.3.0",
+    "@langchain/anthropic": "^0.3.0",
+    "@langchain/google-genai": "^0.1.0",
+    "dotenv": "^16.4.0",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/uuid": "^9.0.0",
+    "typescript": "^5.3.0"
+  }
+}
+
