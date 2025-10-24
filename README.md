@@ -42,7 +42,14 @@ pnpm install
 
 ### Running TypeScript Notebooks
 
-TypeScript notebooks require a special Jupyter kernel. Follow these steps:
+TypeScript notebooks require a special Jupyter kernel. Follow these steps **in order**:
+
+#### 0. Install Project Dependencies (Required First!)
+```bash
+# From the project root
+pnpm install
+```
+This installs all required LangChain packages (langchain, @langchain/langgraph, etc.)
 
 #### 1. Install Jupyter (if not already installed)
 ```bash
@@ -55,7 +62,7 @@ conda install jupyter
 
 #### 2. Install the TypeScript Kernel (tslab)
 ```bash
-# Install tslab globally
+# Install tslab globally if you haven't installed it before
 npm install -g tslab
 
 # Register the TypeScript kernel with Jupyter
@@ -77,10 +84,29 @@ Alternatively, you can use VS Code (or any VS Code fork like Cursor/Windsurf) wi
 When you open the notebook, make sure the kernel is set to "TypeScript" (look for the kernel indicator in the top-right corner of Jupyter or VS Code).
 
 #### Troubleshooting
-- If the TypeScript kernel doesn't appear, try running `tslab install` again
+
+**Kernel doesn't appear:**
+- Try running `tslab install` again
 - Make sure `node` and `npm` are in your PATH
-- You may need to restart Jupyter after installing tslab
+- Restart Jupyter after installing tslab
 - For VS Code, reload the window after installing tslab
+
+**"Unexpected pending rebuildTimer" error:**
+- This is a tslab timing issue - restart the kernel (Kernel → Restart in Jupyter, or click the restart icon)
+- Wait a few seconds between running cells
+- If it persists, try: `npm uninstall -g tslab && npm install -g tslab && tslab install`
+
+**"Cannot find module" errors:**
+- Make sure you ran `pnpm install` from the project root first
+- The notebook needs to find dependencies in `node_modules/`
+- Verify that `node_modules/` exists in the project root
+
+**Import errors:**
+- tslab uses dynamic imports - some syntax may need adjustment
+- If `import "dotenv/config"` fails, you can set environment variables directly:
+  ```bash
+  export OPENAI_API_KEY="your-key"
+  ```
 
 
 ### Azure OpenAI Instructions
