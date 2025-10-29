@@ -1,34 +1,11 @@
 import "dotenv/config";
 import { initChatModel, tool } from "langchain";
-import { z } from "zod";
-import { BaseMessage } from "langchain";
-import { Annotation, messagesStateReducer, MemorySaver, InMemoryStore } from "@langchain/langgraph";
+import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
+import { MemorySaver, InMemoryStore } from "@langchain/langgraph";
 import { createAgent } from "langchain";
 import { SqlDatabase } from "@langchain/classic/sql_db";
 import { setupDatabase } from "./utils.js";
 
-// ============================================================================
-// State Definition
-// ============================================================================
-
-// Define overall State
-const StateAnnotation = Annotation.Root({
-  messages: Annotation<BaseMessage[]>({
-    reducer: messagesStateReducer,
-  }),
-  customerId: Annotation<number | undefined>({
-    reducer: (x, y) => y ?? x,
-    default: () => undefined,
-  }),
-  loadedMemory: Annotation<string>({
-    reducer: (x, y) => y ?? x,
-    default: () => "",
-  }),
-  remainingSteps: Annotation<number>({
-    reducer: (x, y) => y ?? x,
-    default: () => 25,
-  }),
-});
 
 // ============================================================================
 // Tools
@@ -149,18 +126,11 @@ async function createInvoiceInformationSubagent() {
   // Create tools
   const invoiceTools = await createInvoiceTools(db);
   
-  // Initialize memory stores
-  const checkpointer = new MemorySaver();
-  const inMemoryStore = new InMemoryStore();
-  
   // Define the subagent using LangChain v1's createAgent
   const invoiceInformationSubagent = createAgent({
     model,
     tools: invoiceTools,
     systemPrompt: invoiceSubagentPrompt,
-    stateSchema: StateAnnotation,
-    checkpointer,
-    store: inMemoryStore,
   });
 
   console.log("✅ Invoice Information Subagent created successfully!");
@@ -172,5 +142,6 @@ async function createInvoiceInformationSubagent() {
 // Export
 // ============================================================================
 
-export const graph = await createInvoiceInformationSubagent();
+const agent = await createInvoiceInformationSubagent();
+export const graph = agent.graph;
 

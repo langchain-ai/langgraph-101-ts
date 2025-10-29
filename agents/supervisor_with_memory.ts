@@ -1,8 +1,9 @@
 import "dotenv/config";
 import { initChatModel, tool } from "langchain";
-import { z } from "zod";
+import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
 import { BaseMessage, HumanMessage, SystemMessage, AIMessage } from "langchain";
-import { Annotation, messagesStateReducer, StateGraph, START, END, MemorySaver, InMemoryStore, interrupt } from "@langchain/langgraph";
+import { MessagesZodMeta, StateGraph, START, END, MemorySaver, InMemoryStore, interrupt } from "@langchain/langgraph";
+import { withLangGraph } from "@langchain/langgraph/zod";
 import { createAgent } from "langchain";
 import { SqlDatabase } from "@langchain/classic/sql_db";
 import { setupDatabase } from "./utils.js";
@@ -13,30 +14,17 @@ import { graph as invoiceInformationSubagent } from "./invoice_subagent.js";
 // State Definitions
 // ============================================================================
 
-// Define Input State
-const InputStateAnnotation = Annotation.Root({
-  messages: Annotation<BaseMessage[]>({
-    reducer: messagesStateReducer,
-  }),
+// Define Input State using Zod
+const InputStateAnnotation = z.object({
+  messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
 });
 
-// Define overall State
-const StateAnnotation = Annotation.Root({
-  messages: Annotation<BaseMessage[]>({
-    reducer: messagesStateReducer,
-  }),
-  customerId: Annotation<number | undefined>({
-    reducer: (x, y) => y ?? x,
-    default: () => undefined,
-  }),
-  loadedMemory: Annotation<string>({
-    reducer: (x, y) => y ?? x,
-    default: () => "",
-  }),
-  remainingSteps: Annotation<number>({
-    reducer: (x, y) => y ?? x,
-    default: () => 25,
-  }),
+// Define overall State using Zod with MessagesZodMeta (same as createAgent uses)
+const StateAnnotation = z.object({
+  messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
+  customerId: z.number().optional(),
+  loadedMemory: z.string().default(""),
+  remainingSteps: z.number().default(25),
 });
 
 // ============================================================================
@@ -115,12 +103,15 @@ Your primary role is to delegate tasks to this multi-agent team in order to answ
 Always respond to the customer through summarizing the findings of the individual responses from subagents. 
 If a question is unrelated to music or invoice, politely remind the customer regarding your scope of work. Do not answer unrelated answers.
 Based on the existing steps that have been taken in the messages, your role is to call the appropriate subagent based on the users query.
+
+CRITICAL: Look for a message in the conversation history that starts with "user_preferences:". When calling the music_catalog_subagent, 
+extract the preferences from that message and pass them as the userPreferences parameter. This helps personalize music recommendations.
 </important_instructions>
 
 <tools>
 You have 2 tools available to delegate to the subagents on your team:
 1. music_catalog_subagent: Call this tool to delegate to the music subagent. The music agent has access to user's saved music preferences. It can also retrieve information about the digital music store's music 
-catalog (albums, tracks, songs, etc.) from the database. 
+catalog (albums, tracks, songs, etc.) from the database. IMPORTANT: Extract the user_preferences from the message history and pass it as the userPreferences parameter.
 2. invoice_information_subagent: Call this tool to delegate to the invoice subagent. This subagent is able to retrieve information about a customer's past purchases or invoices 
 from the database. This tool requires a customerId parameter - extract it from the user's message or context.
 </tools>
@@ -166,9 +157,9 @@ Reminder: Take a deep breath and think carefully before responding.
 
 const callInvoiceInformationSubagent = tool(
   async ({ query, customerId }: { query: string; customerId: number }) => {
-    const result = await invoiceInformationSubagent.invoke({
+    const result: any = await invoiceInformationSubagent.invoke({
       messages: [new HumanMessage(`Customer ID: ${customerId}. ${query}`)],
-    } as any);
+    });
     const subagentResponse = result.messages[result.messages.length - 1].content;
     return subagentResponse;
   },
@@ -183,10 +174,11 @@ const callInvoiceInformationSubagent = tool(
 );
 
 const callMusicCatalogSubagent = tool(
-  async ({ query }: { query: string }) => {
-    const result = await musicCatalogSubagent.invoke({
+  async ({ query, userPreferences }: { query: string; userPreferences?: string }) => {
+    const result: any = await musicCatalogSubagent.invoke({
       messages: [new HumanMessage(query)],
-    } as any);
+      loadedMemory: userPreferences || "",
+    });
     const subagentResponse = result.messages[result.messages.length - 1].content;
     return subagentResponse;
   },
@@ -195,6 +187,7 @@ const callMusicCatalogSubagent = tool(
     description: "An agent that can assist with all music-related queries. This agent has access to user's saved music preferences. It can also retrieve information about the digital music store's music catalog (albums, tracks, songs, etc.) from the database.",
     schema: z.object({
       query: z.string().describe("The query to send to the music catalog subagent"),
+      userPreferences: z.string().optional().describe("The user's music preferences extracted from the conversation history (look for 'user_preferences:' message)"),
     }),
   }
 );
@@ -214,7 +207,7 @@ function createVerifyInfoNode(model: any, db: SqlDatabase) {
 Only extract the customer's account information from the message history. 
 If they haven't provided the information yet, return an empty string for the identifier`;
 
-  return async function verifyInfo(state: typeof StateAnnotation.State) {
+  return async function verifyInfo(state: z.infer<typeof StateAnnotation>) {
     if (state.customerId === undefined) {
       const systemInstructions = `
 You are a music store agent, where you are trying to verify the customer identity as the first step of the customer support process. 
@@ -261,7 +254,7 @@ IMPORTANT: Do NOT ask any questions about their request, or make any attempt at 
   };
 }
 
-function humanInput(state: typeof StateAnnotation.State) {
+function humanInput(state: z.infer<typeof StateAnnotation>) {
   const userInput = interrupt("Please provide input.");
   return { messages: [new HumanMessage(userInput as string)] };
 }
@@ -276,10 +269,13 @@ function createLoadMemoryNode(inMemoryStore: InMemoryStore) {
     return result.trim();
   }
 
-  return async function loadMemory(state: typeof StateAnnotation.State) {
+  return async function loadMemory(state: z.infer<typeof StateAnnotation>) {
     const userId = state.customerId?.toString();
     if (!userId) {
-      return { loadedMemory: "" };
+      return { 
+        loadedMemory: "",
+        messages: [new HumanMessage("user_preferences: none")]
+      };
     }
     
     const namespace = ["memory_profile", userId];
@@ -290,12 +286,20 @@ function createLoadMemoryNode(inMemoryStore: InMemoryStore) {
       formattedMemory = formatUserMemory(existingMemory.value);
     }
     
-    return { loadedMemory: formattedMemory };
+    // Add a message to the conversation with user preferences
+    const preferencesMessage = formattedMemory 
+      ? `user_preferences: ${formattedMemory}`
+      : "user_preferences: none";
+    
+    return { 
+      loadedMemory: formattedMemory,
+      messages: [new HumanMessage(preferencesMessage)]
+    };
   };
 }
 
 function createCreateMemoryNode(model: any, inMemoryStore: InMemoryStore) {
-  return async function createMemory(state: typeof StateAnnotation.State) {
+  return async function createMemory(state: z.infer<typeof StateAnnotation>) {
     const userId = state.customerId?.toString();
     if (!userId) {
       return {};
@@ -320,7 +324,7 @@ function createCreateMemoryNode(model: any, inMemoryStore: InMemoryStore) {
 }
 
 function createSupervisorNode(supervisor: any) {
-  return async function supervisorNode(state: typeof StateAnnotation.State) {
+  return async function supervisorNode(state: z.infer<typeof StateAnnotation>) {
     const result = await supervisor.invoke(state as any);
     return {
       messages: result.messages,
@@ -332,7 +336,7 @@ function createSupervisorNode(supervisor: any) {
 // Conditional Edge
 // ============================================================================
 
-function shouldInterrupt(state: typeof StateAnnotation.State): "continue" | "interrupt" {
+function shouldInterrupt(state: z.infer<typeof StateAnnotation>): "continue" | "interrupt" {
   if (state.customerId !== undefined) {
     return "continue";
   } else {
@@ -351,7 +355,7 @@ async function createSupervisorWithMemory() {
   const db = await setupDatabase();
   
   // Initialize model
-  const model = await initChatModel("openai:gpt-4o-mini");
+  const model = await initChatModel("openai:o3-mini");
   
   // Initialize memory stores
   const checkpointer = new MemorySaver();

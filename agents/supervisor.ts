@@ -1,8 +1,9 @@
 import "dotenv/config";
 import { initChatModel, tool } from "langchain";
-import { z } from "zod";
+import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
 import { BaseMessage, HumanMessage } from "langchain";
-import { Annotation, messagesStateReducer, MemorySaver, InMemoryStore } from "@langchain/langgraph";
+import { MessagesZodMeta, MemorySaver, InMemoryStore } from "@langchain/langgraph";
+import { withLangGraph } from "@langchain/langgraph/zod";
 import { createAgent } from "langchain";
 import { graph as musicCatalogSubagent } from "./music_subagent.js";
 import { graph as invoiceInformationSubagent } from "./invoice_subagent.js";
@@ -11,23 +12,12 @@ import { graph as invoiceInformationSubagent } from "./invoice_subagent.js";
 // State Definition
 // ============================================================================
 
-// Define overall State
-const StateAnnotation = Annotation.Root({
-  messages: Annotation<BaseMessage[]>({
-    reducer: messagesStateReducer,
-  }),
-  customerId: Annotation<number | undefined>({
-    reducer: (x, y) => y ?? x,
-    default: () => undefined,
-  }),
-  loadedMemory: Annotation<string>({
-    reducer: (x, y) => y ?? x,
-    default: () => "",
-  }),
-  remainingSteps: Annotation<number>({
-    reducer: (x, y) => y ?? x,
-    default: () => 25,
-  }),
+// Define overall State using Zod with MessagesZodMeta (same as createAgent uses)
+const StateAnnotation = z.object({
+  messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
+  customerId: z.number().optional(),
+  loadedMemory: z.string().default(""),
+  remainingSteps: z.number().default(25),
 });
 
 // ============================================================================
@@ -64,9 +54,9 @@ from the database. This tool requires a customerId parameter - extract it from t
 const callInvoiceInformationSubagent = tool(
   async ({ query, customerId }: { query: string; customerId: number }) => {
     // Pass both the query and customerId to the invoice subagent
-    const result = await invoiceInformationSubagent.invoke({
+    const result: any = await invoiceInformationSubagent.invoke({
       messages: [new HumanMessage(`Customer ID: ${customerId}. ${query}`)],
-    } as any);
+    });
     const subagentResponse = result.messages[result.messages.length - 1].content;
     return subagentResponse;
   },
@@ -82,9 +72,9 @@ const callInvoiceInformationSubagent = tool(
 
 const callMusicCatalogSubagent = tool(
   async ({ query }: { query: string }) => {
-    const result = await musicCatalogSubagent.invoke({
+    const result: any = await musicCatalogSubagent.invoke({
       messages: [new HumanMessage(query)],
-    } as any);
+    });
     const subagentResponse = result.messages[result.messages.length - 1].content;
     return subagentResponse;
   },
@@ -130,5 +120,6 @@ async function createSupervisor() {
 // Export
 // ============================================================================
 
-export const graph = await createSupervisor();
+const supervisor = await createSupervisor();
+export const graph = supervisor.graph;
 

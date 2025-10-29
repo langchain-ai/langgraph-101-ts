@@ -1,8 +1,9 @@
 import "dotenv/config";
 import { initChatModel, tool } from "langchain";
-import { z } from "zod";
+import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
 import { BaseMessage, HumanMessage, SystemMessage, AIMessage } from "langchain";
-import { Annotation, messagesStateReducer, StateGraph, START, END, MemorySaver, InMemoryStore, interrupt } from "@langchain/langgraph";
+import { MessagesZodMeta, StateGraph, START, END, MemorySaver, InMemoryStore, interrupt } from "@langchain/langgraph";
+import { withLangGraph } from "@langchain/langgraph/zod";
 import { createAgent } from "langchain";
 import { SqlDatabase } from "@langchain/classic/sql_db";
 import { setupDatabase } from "./utils.js";
@@ -13,30 +14,17 @@ import { graph as invoiceInformationSubagent } from "./invoice_subagent.js";
 // State Definitions
 // ============================================================================
 
-// Define Input State
-const InputStateAnnotation = Annotation.Root({
-  messages: Annotation<BaseMessage[]>({
-    reducer: messagesStateReducer,
-  }),
+// Define Input State using Zod
+const InputStateAnnotation = z.object({
+  messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
 });
 
-// Define overall State
-const StateAnnotation = Annotation.Root({
-  messages: Annotation<BaseMessage[]>({
-    reducer: messagesStateReducer,
-  }),
-  customerId: Annotation<number | undefined>({
-    reducer: (x, y) => y ?? x,
-    default: () => undefined,
-  }),
-  loadedMemory: Annotation<string>({
-    reducer: (x, y) => y ?? x,
-    default: () => "",
-  }),
-  remainingSteps: Annotation<number>({
-    reducer: (x, y) => y ?? x,
-    default: () => 25,
-  }),
+// Define overall State using Zod with MessagesZodMeta (same as createAgent uses)
+const StateAnnotation = z.object({
+  messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
+  customerId: z.number().optional(),
+  loadedMemory: z.string().default(""),
+  remainingSteps: z.number().default(25),
 });
 
 // ============================================================================
@@ -125,9 +113,9 @@ from the database. This tool requires a customerId parameter - extract it from t
 
 const callInvoiceInformationSubagent = tool(
   async ({ query, customerId }: { query: string; customerId: number }) => {
-    const result = await invoiceInformationSubagent.invoke({
+    const result: any = await invoiceInformationSubagent.invoke({
       messages: [new HumanMessage(`Customer ID: ${customerId}. ${query}`)],
-    } as any);
+    });
     const subagentResponse = result.messages[result.messages.length - 1].content;
     return subagentResponse;
   },
@@ -143,9 +131,9 @@ const callInvoiceInformationSubagent = tool(
 
 const callMusicCatalogSubagent = tool(
   async ({ query }: { query: string }) => {
-    const result = await musicCatalogSubagent.invoke({
+    const result: any = await musicCatalogSubagent.invoke({
       messages: [new HumanMessage(query)],
-    } as any);
+    });
     const subagentResponse = result.messages[result.messages.length - 1].content;
     return subagentResponse;
   },
@@ -174,7 +162,7 @@ function createVerifyInfoNode(model: any, db: SqlDatabase) {
 Only extract the customer's account information from the message history. 
 If they haven't provided the information yet, return an empty string for the identifier`;
 
-  return async function verifyInfo(state: typeof StateAnnotation.State) {
+  return async function verifyInfo(state: z.infer<typeof StateAnnotation>) {
     if (state.customerId === undefined) {
       const systemInstructions = `
 You are a music store agent, where you are trying to verify the customer identity as the first step of the customer support process. 
@@ -225,13 +213,13 @@ IMPORTANT: Do NOT ask any questions about their request, or make any attempt at 
   };
 }
 
-function humanInput(state: typeof StateAnnotation.State) {
+function humanInput(state: z.infer<typeof StateAnnotation>) {
   const userInput = interrupt("Please provide input.");
   return { messages: [new HumanMessage(userInput as string)] };
 }
 
 function createSupervisorNode(supervisor: any) {
-  return async function supervisorNode(state: typeof StateAnnotation.State) {
+  return async function supervisorNode(state: z.infer<typeof StateAnnotation>) {
     const result = await supervisor.invoke(state as any);
     return {
       messages: result.messages,
@@ -243,7 +231,7 @@ function createSupervisorNode(supervisor: any) {
 // Conditional Edge
 // ============================================================================
 
-function shouldInterrupt(state: typeof StateAnnotation.State): "continue" | "interrupt" {
+function shouldInterrupt(state: z.infer<typeof StateAnnotation>): "continue" | "interrupt" {
   if (state.customerId !== undefined) {
     return "continue";
   } else {

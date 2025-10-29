@@ -4,6 +4,8 @@
   "description": "LangGraph 101 TypeScript Tutorial",
   "type": "module",
   "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
     "dev": "node --experimental-modules",
     "test": "echo \"No tests yet\""
   },
@@ -22,10 +24,14 @@
     "@langchain/core": "^1.0.1",
     "@langchain/google-genai": "^1.0.0",
     "@langchain/langgraph": "^1.0.1",
+    "@langchain/langgraph-cli": "1.0.3",
     "@langchain/openai": "^1.0.0",
+    "agentevals": "^0.0.6",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^17.2.3",
     "langchain": "^1.0.1",
+    "langsmith": "^0.3.74",
+    "openevals": "^0.1.1",
     "sql.js": "^1.13.0",
     "sqlite3": "^5.1.7",
     "typeorm": "^0.3.20",

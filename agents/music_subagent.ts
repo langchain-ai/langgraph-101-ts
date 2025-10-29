@@ -1,8 +1,9 @@
 import "dotenv/config";
 import { initChatModel, tool } from "langchain";
-import { z } from "zod";
+import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
 import { BaseMessage, SystemMessage, AIMessage } from "langchain";
-import { Annotation, messagesStateReducer, StateGraph, START, END, MemorySaver, InMemoryStore } from "@langchain/langgraph";
+import { MessagesZodMeta, StateGraph, START, END, MemorySaver, InMemoryStore } from "@langchain/langgraph";
+import { withLangGraph } from "@langchain/langgraph/zod";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { SqlDatabase } from "@langchain/classic/sql_db";
 import { setupDatabase } from "./utils.js";
@@ -11,23 +12,12 @@ import { setupDatabase } from "./utils.js";
 // State Definition
 // ============================================================================
 
-// Define overall State
-const StateAnnotation = Annotation.Root({
-  messages: Annotation<BaseMessage[]>({
-    reducer: messagesStateReducer,
-  }),
-  customerId: Annotation<number | undefined>({
-    reducer: (x, y) => y ?? x,
-    default: () => undefined,
-  }),
-  loadedMemory: Annotation<string>({
-    reducer: (x, y) => y ?? x,
-    default: () => "",
-  }),
-  remainingSteps: Annotation<number>({
-    reducer: (x, y) => y ?? x,
-    default: () => 25,
-  }),
+// Define overall State using Zod with MessagesZodMeta
+const StateAnnotation = z.object({
+  messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
+  customerId: z.number().optional(),
+  loadedMemory: z.string().default(""),
+  remainingSteps: z.number().default(25),
 });
 
 // ============================================================================
@@ -178,7 +168,7 @@ Message history is also attached.
 }
 
 function createMusicAssistant(llmWithTools: any) {
-  return async function musicAssistant(state: typeof StateAnnotation.State) {
+  return async function musicAssistant(state: z.infer<typeof StateAnnotation>) {
     // Fetching long term memory
     let memory = "None";
     if (state.loadedMemory) {
@@ -203,7 +193,7 @@ function createMusicAssistant(llmWithTools: any) {
 // Conditional Edge
 // ============================================================================
 
-function shouldContinue(state: typeof StateAnnotation.State): "continue" | "end" {
+function shouldContinue(state: z.infer<typeof StateAnnotation>): "continue" | "end" {
   const messages = state.messages;
   const lastMessage = messages[messages.length - 1] as AIMessage;
 

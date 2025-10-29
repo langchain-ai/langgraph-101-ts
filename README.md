@@ -40,6 +40,26 @@ npm install -g pnpm
 pnpm install
 ```
 
+### Running LangGraph Studio
+
+LangGraph Studio is a visual IDE for developing and debugging LangGraph applications. To run it with TypeScript projects:
+
+```bash
+npx @langchain/langgraph-cli dev
+```
+
+This will:
+- Start the LangGraph API server at `http://localhost:2024`
+- Automatically open Studio in your browser
+- Watch for changes in your TypeScript files and hot-reload
+
+**Options:**
+- Use `--port <number>` to change the default port
+- Use `--tunnel` if you're using Safari (which blocks localhost connections)
+- Use `--no-browser` to skip automatically opening the browser
+
+The CLI will automatically detect your TypeScript graphs from `langgraph.json` and handle compilation and execution.
+
 ### Running TypeScript Notebooks
 
 TypeScript notebooks require a special Jupyter kernel. Follow these steps **in order**:
