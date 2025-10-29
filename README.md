@@ -17,7 +17,7 @@ To tackle this problem, we’ve built [LangGraph](https://langchain-ai.github.io
 
 ### Clone the LangGraph 101 repo
 ```
-git clone https://github.com/langchain-ai/langgraph-101.git
+git clone https://github.com/langchain-ai/langgraph-101-ts.git
 ```
 
 
