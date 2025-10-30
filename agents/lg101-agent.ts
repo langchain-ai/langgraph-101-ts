@@ -42,27 +42,16 @@ const getWeather = tool(
 // Agent Creation
 // ============================================================================
 
-async function createLG101Agent() {
-  console.log("🤖 Creating LG101 Agent...");
-  
-  // Initialize model
-  const model = await initChatModel("openai:gpt-4o-mini");
-  
-  // Create the agent
-  const agent = createAgent({
-    model,
-    tools: [getWeather],
-    systemPrompt: "You are a helpful weather assistant. Use the get_weather tool to check weather for cities.",
-  });
 
-  console.log("✅ LG101 Agent created successfully!");
-  
-  return agent;
-}
+// Create the agent
+const agent = createAgent({
+  model: "openai:gpt-4o-mini",
+  tools: [getWeather],
+  systemPrompt: "You are a helpful weather assistant. Use the get_weather tool to check weather for cities.",
+});
 
 // ============================================================================
 // Export
 // ============================================================================
 
-const agent = await createLG101Agent();
 export const graph = agent.graph;
