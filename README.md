@@ -62,71 +62,130 @@ The CLI will automatically detect your TypeScript graphs from `langgraph.json` a
 
 ### Running TypeScript Notebooks
 
-TypeScript notebooks require a special Jupyter kernel. Follow these steps **in order**:
+TypeScript notebooks require a special Jupyter kernel (tslab). Follow these steps **in order** to set up tslab with a Python virtual environment:
 
-#### 0. Install Project Dependencies (Required First!)
+#### 0. Install Node.js Project Dependencies (Required First!)
 ```bash
 # From the project root
 pnpm install
 ```
-This installs all required LangChain packages (langchain, @langchain/langgraph, etc.)
+This installs all required LangChain packages (langchain, @langchain/langgraph, etc.) and tslab locally.
 
-#### 1. Install Jupyter (if not already installed)
+#### 1. Create and Activate Python Virtual Environment
 ```bash
-# Using pip
-pip install jupyter
+# From the project root
+python3 -m venv .venv
 
-# Or using conda
-conda install jupyter
+# Activate the venv (macOS/Linux)
+source .venv/bin/activate
+
+# On Windows:
+# .venv\Scripts\activate
 ```
 
-#### 2. Install the TypeScript Kernel (tslab)
+#### 2. Install Jupyter in the Virtual Environment
 ```bash
-# Install tslab globally if you haven't installed it before
-npm install -g tslab
-
-# Register the TypeScript kernel with Jupyter
-tslab install --version
+# Make sure venv is activated (you should see (.venv) in your prompt)
+pip install jupyterlab ipykernel
 ```
 
-#### 3. Open the Notebook
+#### 3. Install TypeScript Kernel (tslab) Locally
+tslab is already installed as a dev dependency from step 0. Now register it with your venv's Python:
+
+```bash
+# Make sure you're still in the activated venv and in the project root
+npx tslab install --python "$(which python3)"
+
+# You should see:
+# Installing TypeScript kernel spec
+# Installing JavaScript kernel spec
+```
+
+This registers the TypeScript kernel with your venv's Jupyter installation.
+
+#### 4. Verify the Setup (Important!)
+Launch Jupyter and verify the kernel is using your venv:
+
+```bash
+# From the project root with venv activated
+jupyter lab
+```
+
+Once Jupyter opens, create a new cell in your notebook and paste this diagnostic:
+
+```typescript
+import { execSync } from 'child_process';
+
+try {
+    const pythonPath = execSync('which python3', { encoding: 'utf-8' }).trim();
+    const pythonVersion = execSync('python3 --version', { encoding: 'utf-8' }).trim();
+    
+    console.log('Python Path:', pythonPath);
+    console.log('Python Version:', pythonVersion);
+    console.log('Working Directory:', process.cwd());
+    console.log('Node Version:', process.version);
+    
+    if (pythonPath.includes('.venv')) {
+        console.log('✅ Using venv Python!');
+    } else {
+        console.log('⚠️  NOT using venv Python - re-register tslab with your venv');
+    }
+} catch (error) {
+    console.error('❌ No Python found');
+}
+```
+
+You should see `✅ Using venv Python!` in the output.
+
+#### 5. Open the Notebook
 ```bash
 # Navigate to the notebook directory
 cd notebooks/LG101
 
-# Launch Jupyter
-jupyter notebook langgraph_101.ipynb
+# Launch Jupyter (with venv activated)
+jupyter lab langgraph_101.ipynb
 ```
 
-Alternatively, you can use VS Code (or any VS Code fork like Cursor/Windsurf) with the Jupyter extension, which will automatically detect the TypeScript kernel once tslab is installed.
-
-#### 4. Verify Kernel Selection
-When you open the notebook, make sure the kernel is set to "TypeScript" (look for the kernel indicator in the top-right corner of Jupyter or VS Code).
+Alternatively, you can use VS Code (or any VS Code fork like Cursor/Windsurf) with the Jupyter extension. Just make sure:
+1. Your venv is activated
+2. You select the "TypeScript (tslab)" kernel from the kernel picker (top-right)
 
 #### Troubleshooting
 
+**Kernel shows system Python instead of venv:**
+```bash
+# Re-register tslab with your venv's Python
+source .venv/bin/activate
+npx tslab install --python "$(which python3)"
+# Restart Jupyter and re-run the diagnostic
+```
+
 **Kernel doesn't appear:**
-- Try running `tslab install` again
-- Make sure `node` and `npm` are in your PATH
-- Restart Jupyter after installing tslab
-- For VS Code, reload the window after installing tslab
+- Make sure you ran `npx tslab install` after activating your venv
+- Restart Jupyter/VS Code after installing tslab
+- Run `jupyter kernelspec list` to see registered kernels
 
 **"Unexpected pending rebuildTimer" error:**
-- This is a tslab timing issue - restart the kernel (Kernel → Restart in Jupyter, or click the restart icon)
-- Wait a few seconds between running cells
-- If it persists, try: `npm uninstall -g tslab && npm install -g tslab && tslab install`
+- This is a tslab timing issue - restart the kernel
+- Wait 2-3 seconds between running cells
+- If it persists, clear outputs and restart the kernel
 
 **"Cannot find module" errors:**
 - Make sure you ran `pnpm install` from the project root first
 - The notebook needs to find dependencies in `node_modules/`
 - Verify that `node_modules/` exists in the project root
 
-**Import errors:**
-- tslab uses dynamic imports - some syntax may need adjustment
-- If `import "dotenv/config"` fails, you can set environment variables directly:
+**Import errors for dotenv:**
+- If `import "dotenv/config"` fails, set environment variables manually:
   ```bash
   export OPENAI_API_KEY="your-key"
   ```
+
+**Why use a venv with TypeScript notebooks?**
+- tslab uses Python's Jupyter kernel infrastructure under the hood
+- Using a venv ensures clean dependency management
+- Prevents conflicts with system Python packages
+- Makes the setup reproducible across different machines
 
 
 ### Azure OpenAI Instructions

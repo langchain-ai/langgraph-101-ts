@@ -43,6 +43,7 @@
     "@types/node": "^24.9.1",
     "@types/sql.js": "^1.4.9",
     "@types/uuid": "^11.0.0",
+    "tslab": "^1.0.22",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }
