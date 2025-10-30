@@ -8,15 +8,33 @@ import { createAgent } from "langchain";
 // ============================================================================
 
 const getWeather = tool(
-  async ({ city }: { city: string }) => {
-    return `It's 72°F and sunny in ${city}!`;
+  async ({ latitude, longitude }: { latitude: number; longitude: number }) => {
+    const url = "https://api.open-meteo.com/v1/forecast";
+    const params = new URLSearchParams({
+      latitude: latitude.toString(),
+      longitude: longitude.toString(),
+      current: "temperature_2m,weather_code",
+      temperature_unit: "fahrenheit"
+    });
+
+    const response = await fetch(`${url}?${params}`);
+    const data = await response.json() as any; // Type assertion for API response
+    const weather = data.current;
+    const temperature = weather.temperature_2m;
+    const weatherCode = weather.weather_code;
+    
+    return JSON.stringify({
+      temperature_fahrenheit: temperature,
+      weather_code: weatherCode
+    });
   },
   {
     name: "get_weather",
-    description: "Get the current weather for a given city.",
+    description: "Get current temperature in Fahrenheit and weather code for given coordinates. Returns JSON with temperature_fahrenheit and weather_code (do not include the code in your response, translate it to plain English)",
     schema: z.object({
-      city: z.string().describe("The city name"),
-    }),
+      latitude: z.number().describe("Latitude coordinate"),
+      longitude: z.number().describe("Longitude coordinate")
+    })
   }
 );
 
