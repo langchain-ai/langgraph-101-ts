@@ -1,6 +1,29 @@
 import { SqlDatabase } from "@langchain/classic/sql_db";
 import { DataSource } from "typeorm";
 import initSqlJs from "sql.js";
+import { z } from "zod/v3";
+import { BaseMessage } from "langchain";
+import { MessagesZodMeta } from "@langchain/langgraph";
+import { withLangGraph } from "@langchain/langgraph/zod";
+
+// ============================================================================
+// Shared State Definition
+// ============================================================================
+
+/**
+ * Shared state schema used across all agents
+ * This ensures consistent state structure for message passing and context sharing
+ */
+export const StateAnnotation = z.object({
+  messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
+  customerId: z.number().optional(),
+  loadedMemory: z.string().default(""),
+  remainingSteps: z.number().default(25),
+});
+
+// ============================================================================
+// Database Setup
+// ============================================================================
 
 /**
  * Sets up and initializes the Chinook database using sql.js

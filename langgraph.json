@@ -1,16 +1,13 @@
 {
     "dockerfile_lines": [],
     "graphs": {
-      "LG101 Agent": "./agents/lg101-agent.ts:graph",
-      "Music Catalog Subagent": "./agents/music_subagent.ts:graph",
-      "Invoice Subagent": "./agents/invoice_subagent.ts:graph",
-      "Supervisor": "./agents/supervisor.ts:graph",
-      "Supervisor with Verification": "./agents/supervisor_with_verification.ts:graph",
-      "Supervisor with Memory": "./agents/supervisor_with_memory.ts:graph"
+      "LG101 Agent": "./agents/00-lg101_agent.ts:graph",
+      "Music Catalog Subagent": "./agents/01-music_subagent.ts:graph",
+      "Invoice Subagent": "./agents/02-invoice_subagent.ts:graph",
+      "Supervisor": "./agents/03-supervisor.ts:graph",
+      "Supervisor with Verification": "./agents/04-supervisor_with_verification.ts:graph",
+      "Supervisor with Memory": "./agents/05-supervisor_with_memory.ts:graph"
     },
     "env": ".env",
-    "python_version": "3.11",
-    "dependencies": [
-      "."
-    ]
+    "dependencies": ["."]
   }

@@ -2,13 +2,13 @@ import "dotenv/config";
 import { initChatModel, tool } from "langchain";
 import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
 import { BaseMessage, HumanMessage, SystemMessage, AIMessage } from "langchain";
-import { MessagesZodMeta, StateGraph, START, END, MemorySaver, InMemoryStore, interrupt } from "@langchain/langgraph";
+import { MessagesZodMeta, StateGraph, START, END, MemorySaver, InMemoryStore, interrupt, getCurrentTaskInput } from "@langchain/langgraph";
 import { withLangGraph } from "@langchain/langgraph/zod";
 import { createAgent } from "langchain";
 import { SqlDatabase } from "@langchain/classic/sql_db";
-import { setupDatabase } from "./utils.js";
-import { graph as musicCatalogSubagent } from "./music_subagent.js";
-import { graph as invoiceInformationSubagent } from "./invoice_subagent.js";
+import { setupDatabase, StateAnnotation } from "./utils.js";
+import { graph as musicCatalogSubagent } from "./01-music_subagent.js";
+import { graph as invoiceInformationSubagent } from "./02-invoice_subagent.js";
 
 // ============================================================================
 // State Definitions
@@ -19,27 +19,11 @@ const InputStateAnnotation = z.object({
   messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
 });
 
-// Define overall State using Zod with MessagesZodMeta (same as createAgent uses)
-const StateAnnotation = z.object({
-  messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
-  customerId: z.number().optional(),
-  loadedMemory: z.string().default(""),
-  remainingSteps: z.number().default(25),
-});
-
-// ============================================================================
-// Memory Schema
-// ============================================================================
-
-const UserProfileSchema = z.object({
-  customerId: z.string().describe("The customer ID of the customer"),
-  musicPreferences: z.array(z.string()).describe("The music preferences of the customer"),
-});
-
 // ============================================================================
 // Customer Verification Helpers
 // ============================================================================
 
+// Helper function to look up customer ID from various identifiers
 async function getCustomerIdFromIdentifier(identifier: string, db: SqlDatabase): Promise<number | null> {
   // Direct customer ID (numeric)
   if (/^\d+$/.test(identifier)) {
@@ -48,6 +32,7 @@ async function getCustomerIdFromIdentifier(identifier: string, db: SqlDatabase):
   
   // Phone number lookup
   if (identifier.startsWith("+")) {
+    // Normalize by removing spaces and parentheses for flexible matching
     const normalizedInput = identifier.replace(/[\s\(\)]/g, '');
     
     // Try exact match first
@@ -103,52 +88,15 @@ Your primary role is to delegate tasks to this multi-agent team in order to answ
 Always respond to the customer through summarizing the findings of the individual responses from subagents. 
 If a question is unrelated to music or invoice, politely remind the customer regarding your scope of work. Do not answer unrelated answers.
 Based on the existing steps that have been taken in the messages, your role is to call the appropriate subagent based on the users query.
-
-CRITICAL: Look for a message in the conversation history that starts with "user_preferences:". When calling the music_catalog_subagent, 
-extract the preferences from that message and pass them as the userPreferences parameter. This helps personalize music recommendations.
 </important_instructions>
 
 <tools>
 You have 2 tools available to delegate to the subagents on your team:
 1. music_catalog_subagent: Call this tool to delegate to the music subagent. The music agent has access to user's saved music preferences. It can also retrieve information about the digital music store's music 
-catalog (albums, tracks, songs, etc.) from the database. IMPORTANT: Extract the user_preferences from the message history and pass it as the userPreferences parameter.
+catalog (albums, tracks, songs, etc.) from the database. 
 2. invoice_information_subagent: Call this tool to delegate to the invoice subagent. This subagent is able to retrieve information about a customer's past purchases or invoices 
-from the database. This tool requires a customerId parameter - extract it from the user's message or context.
+from the database. The customer ID is automatically retrieved from the state, so you don't need to pass it.
 </tools>
-`;
-
-const createMemoryPrompt = `You are an expert analyst that is observing a conversation that has taken place between a customer and a customer support assistant. The customer support assistant works for a digital music store, and has utilized a multi-agent team to answer the customer's request. 
-You are tasked with analyzing the conversation that has taken place between the customer and the customer support assistant, and updating the memory profile associated with the customer. 
-You specifically care about saving any music interest the customer has shared about themselves, particularly their music preferences to their memory profile.
-
-<core_instructions>
-1. The memory profile may be empty. If it's empty, you should ALWAYS create a new memory profile for the customer.
-2. You should identify any music interest the customer during the conversation and add it to the memory profile **IF** it is not already present.
-3. For each key in the memory profile, if there is no new information, do NOT update the value - keep the existing value unchanged.
-4. ONLY update the values in the memory profile if there is new information.
-</core_instructions>
-
-<expected_format>
-The customer's memory profile should have the following fields:
-- customerId: the customer ID of the customer
-- musicPreferences: the music preferences of the customer
-
-IMPORTANT: ENSURE your response is an object with these fields.
-</expected_format>
-
-<important_context>
-**IMPORTANT CONTEXT BELOW**
-To help you with this task, I have attached the conversation that has taken place between the customer and the customer support assistant below, as well as the existing memory profile associated with the customer that you should either update or create. 
-
-The conversation between the customer and the customer support assistant that you should analyze is as follows:
-{conversation}
-
-The existing memory profile associated with the customer that you should either update or create based on the conversation is as follows:
-{memory_profile}
-
-</important_context>
-
-Reminder: Take a deep breath and think carefully before responding.
 `;
 
 // ============================================================================
@@ -156,28 +104,31 @@ Reminder: Take a deep breath and think carefully before responding.
 // ============================================================================
 
 const callInvoiceInformationSubagent = tool(
-  async ({ query, customerId }: { query: string; customerId: number }) => {
+  async ({ query }: { query: string }) => {
+    // Get the customerId from the current state
+    const state = await getCurrentTaskInput() as { customerId?: number };
+    
+    // Pass the query and customerId through state to the invoice subagent
     const result: any = await invoiceInformationSubagent.invoke({
-      messages: [new HumanMessage(`Customer ID: ${customerId}. ${query}`)],
+      messages: [new HumanMessage(query)],
+      customerId: state.customerId,
     });
     const subagentResponse = result.messages[result.messages.length - 1].content;
     return subagentResponse;
   },
   {
     name: "invoice_information_subagent",
-    description: "An agent that can assist with all invoice-related queries. It can retrieve information about a customer's past purchases or invoices.",
+    description: "An agent that can assist with all invoice-related queries. It can retrieve information about a customer's past purchases or invoices. The customer ID is automatically retrieved from the state.",
     schema: z.object({
       query: z.string().describe("The query to send to the invoice subagent"),
-      customerId: z.number().describe("The customer ID (get this from the user's context)"),
     }),
   }
 );
 
 const callMusicCatalogSubagent = tool(
-  async ({ query, userPreferences }: { query: string; userPreferences?: string }) => {
+  async ({ query }: { query: string }) => {
     const result: any = await musicCatalogSubagent.invoke({
       messages: [new HumanMessage(query)],
-      loadedMemory: userPreferences || "",
     });
     const subagentResponse = result.messages[result.messages.length - 1].content;
     return subagentResponse;
@@ -187,7 +138,6 @@ const callMusicCatalogSubagent = tool(
     description: "An agent that can assist with all music-related queries. This agent has access to user's saved music preferences. It can also retrieve information about the digital music store's music catalog (albums, tracks, songs, etc.) from the database.",
     schema: z.object({
       query: z.string().describe("The query to send to the music catalog subagent"),
-      userPreferences: z.string().optional().describe("The user's music preferences extracted from the conversation history (look for 'user_preferences:' message)"),
     }),
   }
 );
@@ -197,6 +147,7 @@ const callMusicCatalogSubagent = tool(
 // ============================================================================
 
 function createVerifyInfoNode(model: any, db: SqlDatabase) {
+  // Schema for parsing user-provided account information
   const UserInputSchema = z.object({
     identifier: z.string().describe("Identifier, which can be a customer ID, email, or phone number."),
   });
@@ -221,14 +172,17 @@ IMPORTANT: Do NOT ask any questions about their request, or make any attempt at 
 
       const userInput = state.messages[state.messages.length - 1];
       
+      // Parse for customer ID
       const parsedInfo = await structuredLlm.invoke([
         new SystemMessage(structuredSystemPrompt),
         userInput,
       ]);
       
+      // Extract details
       const identifier = parsedInfo.identifier;
       
       let customerId: number | null = null;
+      // Attempt to find the customer ID
       if (identifier) {
         customerId = await getCustomerIdFromIdentifier(identifier, db);
       }
@@ -249,6 +203,7 @@ IMPORTANT: Do NOT ask any questions about their request, or make any attempt at 
         return { messages: [response] };
       }
     } else {
+      // Customer ID already exists, pass through
       return {};
     }
   };
@@ -257,70 +212,6 @@ IMPORTANT: Do NOT ask any questions about their request, or make any attempt at 
 function humanInput(state: z.infer<typeof StateAnnotation>) {
   const userInput = interrupt("Please provide input.");
   return { messages: [new HumanMessage(userInput as string)] };
-}
-
-function createLoadMemoryNode(inMemoryStore: InMemoryStore) {
-  function formatUserMemory(userData: any): string {
-    const profile = userData.memory;
-    let result = "";
-    if (profile && profile.musicPreferences && profile.musicPreferences.length > 0) {
-      result += `Music Preferences: ${profile.musicPreferences.join(", ")}`;
-    }
-    return result.trim();
-  }
-
-  return async function loadMemory(state: z.infer<typeof StateAnnotation>) {
-    const userId = state.customerId?.toString();
-    if (!userId) {
-      return { 
-        loadedMemory: "",
-        messages: [new HumanMessage("user_preferences: none")]
-      };
-    }
-    
-    const namespace = ["memory_profile", userId];
-    const existingMemory: any = await inMemoryStore.get(namespace, "user_memory");
-    let formattedMemory = "";
-    
-    if (existingMemory && existingMemory.value) {
-      formattedMemory = formatUserMemory(existingMemory.value);
-    }
-    
-    // Add a message to the conversation with user preferences
-    const preferencesMessage = formattedMemory 
-      ? `user_preferences: ${formattedMemory}`
-      : "user_preferences: none";
-    
-    return { 
-      loadedMemory: formattedMemory,
-      messages: [new HumanMessage(preferencesMessage)]
-    };
-  };
-}
-
-function createCreateMemoryNode(model: any, inMemoryStore: InMemoryStore) {
-  return async function createMemory(state: z.infer<typeof StateAnnotation>) {
-    const userId = state.customerId?.toString();
-    if (!userId) {
-      return {};
-    }
-    
-    const namespace = ["memory_profile", userId];
-    const formattedMemory = state.loadedMemory || "";
-    
-    const formattedSystemMessage = new SystemMessage(
-      createMemoryPrompt
-        .replace("{conversation}", JSON.stringify(state.messages))
-        .replace("{memory_profile}", formattedMemory)
-    );
-    
-    const updatedMemory = await model.withStructuredOutput(UserProfileSchema).invoke([formattedSystemMessage]);
-    
-    const key = "user_memory";
-    await inMemoryStore.put(namespace, key, { memory: updatedMemory });
-    
-    return {};
-  };
 }
 
 function createSupervisorNode(supervisor: any) {
@@ -348,67 +239,52 @@ function shouldInterrupt(state: z.infer<typeof StateAnnotation>): "continue" | "
 // Graph Creation
 // ============================================================================
 
-async function createSupervisorWithMemory() {
-  console.log("🧠 Creating Supervisor with Verification and Memory...");
-  
-  // Setup database
-  const db = await setupDatabase();
-  
-  // Initialize model
-  const model = await initChatModel("openai:o3-mini");
-  
-  // Initialize memory stores
-  const checkpointer = new MemorySaver();
-  const inMemoryStore = new InMemoryStore();
-  
-  // Create supervisor agent
-  const supervisor = createAgent({
-    model,
-    tools: [callInvoiceInformationSubagent, callMusicCatalogSubagent],
-    systemPrompt: supervisorPrompt,
-    stateSchema: StateAnnotation,
-    checkpointer,
-    store: inMemoryStore,
-  });
-  
-  // Create nodes
-  const verifyInfo = createVerifyInfoNode(model, db);
-  const loadMemory = createLoadMemoryNode(inMemoryStore);
-  const createMemory = createCreateMemoryNode(model, inMemoryStore);
-  const supervisorNode = createSupervisorNode(supervisor);
-  
-  // Build the final multi-agent graph with memory
-  const multiAgentFinal = new StateGraph(StateAnnotation, {
-    input: InputStateAnnotation,
+console.log("👔 Creating Supervisor with Verification...");
+
+// Setup database
+const db = await setupDatabase();
+
+// Initialize model
+const model = await initChatModel("openai:gpt-4o-mini");
+
+// Initialize memory stores
+const checkpointer = new MemorySaver();
+const inMemoryStore = new InMemoryStore();
+
+// Create supervisor agent
+const supervisor = createAgent({
+  model,
+  tools: [callInvoiceInformationSubagent, callMusicCatalogSubagent],
+  systemPrompt: supervisorPrompt,
+  stateSchema: StateAnnotation,
+  checkpointer,
+  store: inMemoryStore,
+});
+
+// Create nodes
+const verifyInfo = createVerifyInfoNode(model, db);
+const supervisorNode = createSupervisorNode(supervisor);
+
+// Build the graph with human-in-the-loop
+const multiAgentVerify = new StateGraph(StateAnnotation, {
+  input: InputStateAnnotation,
+})
+  .addNode("verify_info", verifyInfo)
+  .addNode("human_input", humanInput)
+  .addNode("supervisor", supervisorNode)
+  .addEdge(START, "verify_info")
+  .addConditionalEdges("verify_info", shouldInterrupt, {
+    continue: "supervisor",
+    interrupt: "human_input",
   })
-    .addNode("verify_info", verifyInfo)
-    .addNode("human_input", humanInput)
-    .addNode("load_memory", loadMemory)
-    .addNode("supervisor", supervisorNode)
-    .addNode("create_memory", createMemory)
-    .addEdge(START, "verify_info")
-    .addConditionalEdges("verify_info", shouldInterrupt, {
-      continue: "load_memory",
-      interrupt: "human_input",
-    })
-    .addEdge("human_input", "verify_info")
-    .addEdge("load_memory", "supervisor")
-    .addEdge("supervisor", "create_memory")
-    .addEdge("create_memory", END);
+  .addEdge("human_input", "verify_info")
+  .addEdge("supervisor", END);
 
-  const multiAgentFinalGraph = multiAgentFinal.compile({
-    checkpointer,
-    store: inMemoryStore,
-  });
+// Compile and export the graph
+export const graph = multiAgentVerify.compile({
+  checkpointer,
+  store: inMemoryStore,
+});
 
-  console.log("✅ Supervisor with Verification and Memory created successfully!");
-  
-  return multiAgentFinalGraph;
-}
-
-// ============================================================================
-// Export
-// ============================================================================
-
-export const graph = await createSupervisorWithMemory();
+console.log("✅ Supervisor with Verification created successfully!");
 

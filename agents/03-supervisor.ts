@@ -1,24 +1,12 @@
 import "dotenv/config";
 import { initChatModel, tool } from "langchain";
 import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
-import { BaseMessage, HumanMessage } from "langchain";
-import { MessagesZodMeta, MemorySaver, InMemoryStore } from "@langchain/langgraph";
-import { withLangGraph } from "@langchain/langgraph/zod";
+import { HumanMessage } from "langchain";
+import { MemorySaver, InMemoryStore, getCurrentTaskInput } from "@langchain/langgraph";
 import { createAgent } from "langchain";
-import { graph as musicCatalogSubagent } from "./music_subagent.js";
-import { graph as invoiceInformationSubagent } from "./invoice_subagent.js";
-
-// ============================================================================
-// State Definition
-// ============================================================================
-
-// Define overall State using Zod with MessagesZodMeta (same as createAgent uses)
-const StateAnnotation = z.object({
-  messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
-  customerId: z.number().optional(),
-  loadedMemory: z.string().default(""),
-  remainingSteps: z.number().default(25),
-});
+import { graph as musicCatalogSubagent } from "./01-music_subagent.js";
+import { graph as invoiceInformationSubagent } from "./02-invoice_subagent.js";
+import { StateAnnotation } from "./utils.js";
 
 // ============================================================================
 // System Prompt
@@ -42,7 +30,7 @@ You have 2 tools available to delegate to the subagents on your team:
 1. music_catalog_subagent: Call this tool to delegate to the music subagent. The music agent has access to user's saved music preferences. It can also retrieve information about the digital music store's music 
 catalog (albums, tracks, songs, etc.) from the database. 
 2. invoice_information_subagent: Call this tool to delegate to the invoice subagent. This subagent is able to retrieve information about a customer's past purchases or invoices 
-from the database. This tool requires a customerId parameter - extract it from the user's message or context.
+from the database. The customer ID is automatically retrieved from the state, so you don't need to pass it.
 </tools>
 `;
 
@@ -52,20 +40,23 @@ from the database. This tool requires a customerId parameter - extract it from t
 
 // Create supervisor tools that delegate to subagents
 const callInvoiceInformationSubagent = tool(
-  async ({ query, customerId }: { query: string; customerId: number }) => {
-    // Pass both the query and customerId to the invoice subagent
+  async ({ query }: { query: string }) => {
+    // Get the customerId from the current state
+    const state = await getCurrentTaskInput() as { customerId?: number };
+    
+    // Pass the query and customerId through state to the invoice subagent
     const result: any = await invoiceInformationSubagent.invoke({
-      messages: [new HumanMessage(`Customer ID: ${customerId}. ${query}`)],
+      messages: [new HumanMessage(query)],
+      customerId: state.customerId,
     });
     const subagentResponse = result.messages[result.messages.length - 1].content;
     return subagentResponse;
   },
   {
     name: "invoice_information_subagent",
-    description: "An agent that can assist with all invoice-related queries. It can retrieve information about a customer's past purchases or invoices.",
+    description: "An agent that can assist with all invoice-related queries. It can retrieve information about a customer's past purchases or invoices. The customer ID is automatically retrieved from the state.",
     schema: z.object({
       query: z.string().describe("The query to send to the invoice subagent"),
-      customerId: z.number().describe("The customer ID (get this from the user's context)"),
     }),
   }
 );
@@ -91,35 +82,30 @@ const callMusicCatalogSubagent = tool(
 // Agent Creation
 // ============================================================================
 
-async function createSupervisor() {
-  console.log("👔 Creating Supervisor Agent...");
-  
-  // Initialize model
-  const model = await initChatModel("openai:gpt-4o-mini");
-  
-  // Initialize memory stores
-  const checkpointer = new MemorySaver();
-  const inMemoryStore = new InMemoryStore();
-  
-  // Create the supervisor agent
-  const supervisor = createAgent({
-    model,
-    tools: [callInvoiceInformationSubagent, callMusicCatalogSubagent],
-    systemPrompt: supervisorPrompt,
-    stateSchema: StateAnnotation,
-    checkpointer,
-    store: inMemoryStore,
-  });
+console.log("👔 Creating Supervisor Agent...");
 
-  console.log("✅ Supervisor Agent created successfully!");
-  
-  return supervisor;
-}
+// Initialize model
+const model = await initChatModel("openai:gpt-4o-mini");
+
+// Initialize memory stores
+const checkpointer = new MemorySaver();
+const inMemoryStore = new InMemoryStore();
+
+// Create the supervisor agent
+const supervisor = createAgent({
+  model,
+  tools: [callInvoiceInformationSubagent, callMusicCatalogSubagent],
+  systemPrompt: supervisorPrompt,
+  stateSchema: StateAnnotation,
+  checkpointer,
+  store: inMemoryStore,
+});
+
+console.log("✅ Supervisor Agent created successfully!");
 
 // ============================================================================
 // Export
 // ============================================================================
 
-const supervisor = await createSupervisor();
 export const graph = supervisor.graph;
 

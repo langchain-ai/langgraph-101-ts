@@ -1,24 +1,11 @@
 import "dotenv/config";
 import { initChatModel, tool } from "langchain";
 import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
-import { BaseMessage, SystemMessage, AIMessage } from "langchain";
-import { MessagesZodMeta, StateGraph, START, END, MemorySaver, InMemoryStore } from "@langchain/langgraph";
-import { withLangGraph } from "@langchain/langgraph/zod";
+import { SystemMessage, AIMessage } from "langchain";
+import { StateGraph, START, END, MemorySaver, InMemoryStore } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { SqlDatabase } from "@langchain/classic/sql_db";
-import { setupDatabase } from "./utils.js";
-
-// ============================================================================
-// State Definition
-// ============================================================================
-
-// Define overall State using Zod with MessagesZodMeta
-const StateAnnotation = z.object({
-  messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
-  customerId: z.number().optional(),
-  loadedMemory: z.string().default(""),
-  remainingSteps: z.number().default(25),
-});
+import { setupDatabase, StateAnnotation } from "./utils.js";
 
 // ============================================================================
 // Tools
@@ -31,7 +18,8 @@ async function createMusicTools(db: SqlDatabase) {
         SELECT Album.Title, Artist.Name 
         FROM Album 
         JOIN Artist ON Album.ArtistId = Artist.ArtistId 
-        WHERE Artist.Name LIKE '%${artist}%';
+        WHERE Artist.Name LIKE '%${artist}%'
+        LIMIT 8;
       `;
       const rawResult = await db.run(query);
       const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
@@ -53,7 +41,8 @@ async function createMusicTools(db: SqlDatabase) {
         FROM Album 
         LEFT JOIN Artist ON Album.ArtistId = Artist.ArtistId 
         LEFT JOIN Track ON Track.AlbumId = Album.AlbumId 
-        WHERE Artist.Name LIKE '%${artist}%';
+        WHERE Artist.Name LIKE '%${artist}%'
+        LIMIT 8;
       `;
       const rawResult = await db.run(query);
       const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
@@ -71,7 +60,7 @@ async function createMusicTools(db: SqlDatabase) {
   const getSongsByGenre = tool(
     async ({ genre }: { genre: string }) => {
       // First get genre ID
-      const genreQuery = `SELECT GenreId FROM Genre WHERE Name LIKE '%${genre}%'`;
+      const genreQuery = `SELECT GenreId FROM Genre WHERE Name LIKE '%${genre}%' LIMIT 8;`;
       const rawGenreResult = await db.run(genreQuery);
       const genreResult = typeof rawGenreResult === 'string' ? JSON.parse(rawGenreResult) : rawGenreResult;
       
@@ -106,7 +95,7 @@ async function createMusicTools(db: SqlDatabase) {
 
   const checkForSongs = tool(
     async ({ songTitle }: { songTitle: string }) => {
-      const query = `SELECT * FROM Track WHERE Name LIKE '%${songTitle}%';`;
+      const query = `SELECT * FROM Track WHERE Name LIKE '%${songTitle}%' LIMIT 8;`;
       const rawResult = await db.run(query);
       const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
       return JSON.stringify(result);
@@ -209,54 +198,44 @@ function shouldContinue(state: z.infer<typeof StateAnnotation>): "continue" | "e
 // Graph Creation
 // ============================================================================
 
-async function createMusicCatalogSubagent() {
-  console.log("🎵 Creating Music Catalog Subagent...");
-  
-  // Setup database
-  const db = await setupDatabase();
-  
-  // Initialize model
-  const model = await initChatModel("openai:gpt-4o-mini");
-  
-  // Create tools
-  const musicTools = await createMusicTools(db);
-  const llmWithMusicTools = model.bindTools(musicTools);
-  
-  // Create tool node
-  const musicToolNode = new ToolNode(musicTools);
-  
-  // Create assistant node
-  const musicAssistant = createMusicAssistant(llmWithMusicTools);
-  
-  // Initialize memory stores
-  const checkpointer = new MemorySaver();
-  const inMemoryStore = new InMemoryStore();
-  
-  // Create the workflow
-  const musicWorkflow = new StateGraph(StateAnnotation)
-    .addNode("music_assistant", musicAssistant)
-    .addNode("music_tool_node", musicToolNode)
-    .addEdge(START, "music_assistant")
-    .addConditionalEdges("music_assistant", shouldContinue, {
-      continue: "music_tool_node",
-      end: END,
-    })
-    .addEdge("music_tool_node", "music_assistant");
+console.log("🎵 Creating Music Catalog Subagent...");
 
-  // Compile the graph
-  const musicCatalogSubagent = musicWorkflow.compile({
-    checkpointer,
-    store: inMemoryStore,
-  });
+// Setup database
+const db = await setupDatabase();
 
-  console.log("✅ Music Catalog Subagent created successfully!");
-  
-  return musicCatalogSubagent;
-}
+// Initialize model
+const model = await initChatModel("openai:gpt-4o-mini");
 
-// ============================================================================
-// Export
-// ============================================================================
+// Create tools
+const musicTools = await createMusicTools(db);
+const llmWithMusicTools = model.bindTools(musicTools);
 
-export const graph = await createMusicCatalogSubagent();
+// Create tool node
+const musicToolNode = new ToolNode(musicTools);
+
+// Create assistant node
+const musicAssistant = createMusicAssistant(llmWithMusicTools);
+
+// Initialize memory stores
+const checkpointer = new MemorySaver();
+const inMemoryStore = new InMemoryStore();
+
+// Create the workflow
+const musicWorkflow = new StateGraph(StateAnnotation)
+  .addNode("music_assistant", musicAssistant)
+  .addNode("music_tool_node", musicToolNode)
+  .addEdge(START, "music_assistant")
+  .addConditionalEdges("music_assistant", shouldContinue, {
+    continue: "music_tool_node",
+    end: END,
+  })
+  .addEdge("music_tool_node", "music_assistant");
+
+// Compile the graph
+export const graph = musicWorkflow.compile({
+  checkpointer,
+  store: inMemoryStore,
+});
+
+console.log("✅ Music Catalog Subagent created successfully!");
 

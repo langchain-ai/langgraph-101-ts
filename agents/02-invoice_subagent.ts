@@ -1,10 +1,10 @@
 import "dotenv/config";
 import { initChatModel, tool } from "langchain";
 import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
-import { MemorySaver, InMemoryStore } from "@langchain/langgraph";
 import { createAgent } from "langchain";
 import { SqlDatabase } from "@langchain/classic/sql_db";
-import { setupDatabase } from "./utils.js";
+import { setupDatabase, StateAnnotation } from "./utils.js";
+import { getCurrentTaskInput } from "@langchain/langgraph";
 
 
 // ============================================================================
@@ -13,7 +13,15 @@ import { setupDatabase } from "./utils.js";
 
 async function createInvoiceTools(db: SqlDatabase) {
   const getInvoicesByCustomerSortedByDate = tool(
-    async ({ customerId }: { customerId: number }) => {
+    async () => {
+      // Get customerId from the graph's state
+      const state = await getCurrentTaskInput() as { customerId?: number };
+      const customerId = state.customerId;
+      
+      if (!customerId) {
+        return "Error: Customer ID not found in state. Customer must be verified first.";
+      }
+      
       const query = `SELECT * FROM Invoice WHERE CustomerId = ${customerId} ORDER BY InvoiceDate DESC;`;
       const rawResult = await db.run(query);
       const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
@@ -21,15 +29,21 @@ async function createInvoiceTools(db: SqlDatabase) {
     },
     {
       name: "get_invoices_by_customer_sorted_by_date",
-      description: "Look up all invoices for a customer using their customer ID. The invoices are sorted in descending order by invoice date.",
-      schema: z.object({
-        customerId: z.number().describe("The customer ID"),
-      }),
+      description: "Look up all invoices for the current customer. The invoices are sorted in descending order by invoice date. The customer ID is automatically retrieved from the state.",
+      schema: z.object({}),
     }
   );
 
   const getInvoicesSortedByUnitPrice = tool(
-    async ({ customerId }: { customerId: number }) => {
+    async () => {
+      // Get customerId from the graph's state
+      const state = await getCurrentTaskInput() as { customerId?: number };
+      const customerId = state.customerId;
+      
+      if (!customerId) {
+        return "Error: Customer ID not found in state. Customer must be verified first.";
+      }
+      
       const query = `
         SELECT Invoice.*, InvoiceLine.UnitPrice
         FROM Invoice
@@ -43,15 +57,21 @@ async function createInvoiceTools(db: SqlDatabase) {
     },
     {
       name: "get_invoices_sorted_by_unit_price",
-      description: "Use this tool when the customer wants to know the details of one of their invoices based on the unit price/cost. This tool looks up all invoices for a customer and sorts by unit price.",
-      schema: z.object({
-        customerId: z.number().describe("The customer ID"),
-      }),
+      description: "Use this tool when the customer wants to know the details of one of their invoices based on the unit price/cost. This tool looks up all invoices for the current customer and sorts by unit price. The customer ID is automatically retrieved from the state.",
+      schema: z.object({}),
     }
   );
 
   const getEmployeeByInvoiceAndCustomer = tool(
-    async ({ invoiceId, customerId }: { invoiceId: number; customerId: number }) => {
+    async ({ invoiceId }: { invoiceId: number }) => {
+      // Get customerId from the graph's state
+      const state = await getCurrentTaskInput() as { customerId?: number };
+      const customerId = state.customerId;
+      
+      if (!customerId) {
+        return "Error: Customer ID not found in state. Customer must be verified first.";
+      }
+      
       const query = `
         SELECT Employee.FirstName, Employee.Title, Employee.Email
         FROM Employee
@@ -69,10 +89,9 @@ async function createInvoiceTools(db: SqlDatabase) {
     },
     {
       name: "get_employee_by_invoice_and_customer",
-      description: "This tool will take in an invoice ID and customer ID and return the employee information associated with the invoice.",
+      description: "This tool will take in an invoice ID and return the employee information associated with the invoice. The customer ID is automatically retrieved from the state.",
       schema: z.object({
         invoiceId: z.number().describe("The ID of the specific invoice"),
-        customerId: z.number().describe("The customer ID"),
       }),
     }
   );
@@ -94,11 +113,11 @@ IMPORTANT: Your interaction with the customer is done through an automated syste
  
 <tools>
 You have access to three tools. These tools enable you to retrieve and process invoice information from the database. Here are the tools:
-- get_invoices_by_customer_sorted_by_date: Retrieves all invoices for a customer (requires customerId parameter)
-- get_invoices_sorted_by_unit_price: Retrieves all invoices for a customer sorted by unit price (requires customerId parameter)
-- get_employee_by_invoice_and_customer: Retrieves employee information for an invoice (requires invoiceId and customerId parameters)
+- get_invoices_by_customer_sorted_by_date: Retrieves all invoices for the current customer (no parameters needed - customer ID is automatically retrieved from state)
+- get_invoices_sorted_by_unit_price: Retrieves all invoices for the current customer sorted by unit price (no parameters needed - customer ID is automatically retrieved from state)
+- get_employee_by_invoice_and_customer: Retrieves employee information for a specific invoice (only requires invoiceId - customer ID is automatically retrieved from state)
 
-IMPORTANT: All tools require a customerId parameter. You will receive the customer ID from the user's context or state. Pay attention to the customer ID and always pass it when calling these tools.
+IMPORTANT: The customer ID is automatically retrieved from the graph state, so you don't need to pass it as a parameter. The customer must be verified before these tools can be used.
 </tools>
 
 <core_responsibilities>
@@ -114,34 +133,30 @@ You may have additional context that you should use to help answer the customer'
 // Agent Creation
 // ============================================================================
 
-async function createInvoiceInformationSubagent() {
-  console.log("💰 Creating Invoice Information Subagent...");
-  
-  // Setup database
-  const db = await setupDatabase();
-  
-  // Initialize model
-  const model = await initChatModel("openai:gpt-4o-mini");
-  
-  // Create tools
-  const invoiceTools = await createInvoiceTools(db);
-  
-  // Define the subagent using LangChain v1's createAgent
-  const invoiceInformationSubagent = createAgent({
-    model,
-    tools: invoiceTools,
-    systemPrompt: invoiceSubagentPrompt,
-  });
+console.log("💰 Creating Invoice Information Subagent...");
 
-  console.log("✅ Invoice Information Subagent created successfully!");
-  
-  return invoiceInformationSubagent;
-}
+// Setup database
+const db = await setupDatabase();
+
+// Initialize model
+const model = await initChatModel("openai:gpt-4o-mini");
+
+// Create tools
+const invoiceTools = await createInvoiceTools(db);
+
+// Create the agent with shared state schema
+const agent = createAgent({
+  model,
+  tools: invoiceTools,
+  systemPrompt: invoiceSubagentPrompt,
+  stateSchema: StateAnnotation,
+});
+
+console.log("✅ Invoice Information Subagent created successfully!");
 
 // ============================================================================
 // Export
 // ============================================================================
 
-const agent = await createInvoiceInformationSubagent();
 export const graph = agent.graph;
 
