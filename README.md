@@ -28,9 +28,8 @@ Create a `.env` file in the project root with your API keys:
 ```bash
 # Copy the example file (if it exists) or create a new .env file
 cp .env.example .env
-# Add your OpenAI API key
-echo "OPENAI_API_KEY=your-openai-api-key-here" >> .env
 ```
+Then add your API Keys
 
 If you run into issues acquiring the necessary API keys due to any restrictions (ex. corporate policy), contact your LangChain representative and we'll find a work-around!
 
@@ -79,6 +78,8 @@ A simple weather agent that introduces fundamental LangGraph concepts:
 
 **Try it**: Ask about the weather in different cities and watch how the agent calls the weather API.
 
+![Simple Agent](./images/architecture.png)
+
 ### Agent 01: Music Catalog Subagent (`01-music_subagent.ts`)
 **Concepts**: StateGraph, custom nodes, conditional edges, database integration
 
@@ -91,6 +92,8 @@ A specialized subagent for music catalog queries:
 
 **Try it**: Search for songs by artist, browse by genre, or check if specific tracks are available.
 
+![Music Subagent](./images/music_subagent.png)
+
 ### Agent 02: Invoice Subagent (`02-invoice_subagent.ts`)
 **Concepts**: Simplified agent creation for specific domains
 
@@ -100,6 +103,8 @@ A specialized subagent for invoice and billing queries:
 - Database queries with customer context
 
 **Try it**: Look up invoices by date or price, find employee information for transactions.
+
+![Invoice Subagent](./images/invoice_subagent.png)
 
 ### Agent 03: Supervisor (`03-supervisor.ts`)
 **Concepts**: Multi-agent coordination, tool delegation
@@ -111,6 +116,8 @@ A supervisor agent that coordinates between specialized subagents:
 - State sharing between agents
 
 **Try it**: Ask mixed queries like "What songs does AC/DC have, and what are my recent invoices?" and watch how the supervisor routes to different subagents.
+
+![Supervisor](./images/supervisor.png)
 
 ### Agent 04: Supervisor with Verification (`04-supervisor_with_verification.ts`)
 **Concepts**: Human-in-the-loop, customer verification, interrupts
@@ -124,6 +131,8 @@ Adds security through customer identity verification:
 
 **Try it**: Start a conversation and see how the agent asks for identification before processing requests.
 
+![Human-in-the-Loop](./images/human_input.png)
+
 ### Agent 05: Supervisor with Memory (`05-supervisor_with_memory.ts`)
 **Concepts**: Long-term memory, personalization, memory management
 
@@ -136,9 +145,61 @@ The complete system with customer preferences and memory:
 
 **Try it**: Share your music preferences across multiple conversations and see how the agent remembers and uses them.
 
+![Memory Management](./images/memory.png)
+
 ### Architecture Diagrams
 
 The `/images` folder contains architecture diagrams for each agent pattern. Reference these while working through the agents to understand the workflow structure visually.
+
+## Testing Your Agents with Evaluations
+
+Once you've built and experimented with the agents in LangGraph Studio, you can measure their performance using automated evaluations. The `/evals` folder contains ready-to-run evaluation scripts.
+
+### Why Run Evaluations?
+
+Evaluations help you:
+- **Catch bugs**: Identify when agents don't work as expected
+- **Compare versions**: See if changes improved or degraded performance
+- **Build confidence**: Ensure agents are ready for production
+
+### What Gets Evaluated
+
+The evaluation scripts test 4 different aspects of agent behavior:
+
+**1. Final Response** (`01-final-response.ts`) - Does the agent give the right final answer?
+
+![Final Response Eval](./images/final-response.png)
+
+**2. Single-Step** (`02-single-step.ts`) - Does the supervisor route to the correct subagent?
+
+![Single Step Eval](./images/single-step.png)
+
+**3. Trajectory** (`03-trajectory.ts`) - Does the agent call the right sequence of tools?
+
+![Trajectory Eval](./images/trajectory.png)
+
+**4. Multi-Turn** (`04-multi-turn.ts`) - Does the agent handle full conversations well?
+
+![Multi-Turn Eval](./images/multi_turn.png)
+
+### Running Evaluations
+
+Each evaluation is a standalone script you can run:
+
+```bash
+npx tsx evals/01-final-response.ts
+npx tsx evals/02-single-step.ts
+npx tsx evals/03-trajectory.ts
+npx tsx evals/04-multi-turn.ts
+```
+
+**Prerequisites:**
+- Add `LANGSMITH_API_KEY` to your `.env` file (get one free at [smith.langchain.com](https://smith.langchain.com))
+- Run `pnpm install` to ensure all dependencies are installed
+
+After each evaluation completes, you'll get a LangSmith URL where you can view detailed results, compare runs, and see execution traces.
+
+📖 **Learn more**: See the full [evaluations documentation](https://docs.langchain.com/langsmith/evaluation-concepts) for details on customizing evaluations and creating your own.
 
 ## Azure OpenAI Configuration
 
