@@ -201,25 +201,61 @@ After each evaluation completes, you'll get a LangSmith URL where you can view d
 
 📖 **Learn more**: See the full [evaluations documentation](https://docs.langchain.com/langsmith/evaluation-concepts) for details on customizing evaluations and creating your own.
 
-## Azure OpenAI Configuration
+## Changing Model Providers
 
-If you are using Azure OpenAI instead of OpenAI, there are a few things you need to do:
+All agents use a shared model configuration defined in `agents/utils.ts`. To switch from OpenAI to a different provider, you only need to modify **one line** in that file.
 
-1. Set necessary environment variables in your `.env` file:
+### Azure OpenAI
+
+1. Set environment variables in your `.env` file:
     ```bash
     AZURE_OPENAI_API_KEY=your-azure-key
     AZURE_OPENAI_ENDPOINT=your-azure-endpoint
     AZURE_OPENAI_API_VERSION=2024-02-15-preview
     ```
 
-2. In the agent files, use `initChatModel` with Azure configuration:
+2. In `agents/utils.ts`, replace the `defaultModel` line:
     ```typescript
-    import { initChatModel } from "langchain";
-    
-    const model = await initChatModel("azure_openai:gpt-4o", {
+    export const defaultModel = await initChatModel("azure_openai:gpt-4o", {
       azureOpenAIApiKey: process.env.AZURE_OPENAI_API_KEY,
       azureOpenAIApiInstanceName: "your-instance-name",
       azureOpenAIApiDeploymentName: "your-deployment-name",
       azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION,
     });
     ```
+
+### Anthropic Claude
+
+1. Set environment variable in your `.env` file:
+    ```bash
+    ANTHROPIC_API_KEY=your-anthropic-key
+    ```
+
+2. In `agents/utils.ts`, replace the `defaultModel` line:
+    ```typescript
+    export const defaultModel = await initChatModel("anthropic:claude-3-5-sonnet-20241022", {
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+    ```
+
+### AWS Bedrock
+
+1. Set environment variables in your `.env` file:
+    ```bash
+    AWS_REGION=us-east-1
+    AWS_ACCESS_KEY_ID=your-access-key
+    AWS_SECRET_ACCESS_KEY=your-secret-key
+    ```
+
+2. In `agents/utils.ts`, replace the `defaultModel` line:
+    ```typescript
+    export const defaultModel = await initChatModel("bedrock:anthropic.claude-3-5-sonnet-20241022-v2:0", {
+      region: process.env.AWS_REGION || "us-east-1",
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      },
+    });
+    ```
+
+**Note**: These examples are also documented as comments in `agents/utils.ts` for easy reference.
