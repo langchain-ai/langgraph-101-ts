@@ -1,11 +1,11 @@
 import "dotenv/config";
-import { initChatModel, tool } from "langchain";
+import { tool } from "langchain";
 import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
 import { SystemMessage, AIMessage } from "langchain";
 import { StateGraph, START, END, MemorySaver, InMemoryStore } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { SqlDatabase } from "@langchain/classic/sql_db";
-import { setupDatabase, StateAnnotation } from "./utils.js";
+import { setupDatabase, StateAnnotation, defaultModel } from "./utils.js";
 
 // ============================================================================
 // Tools
@@ -113,7 +113,7 @@ async function createMusicTools(db: SqlDatabase) {
 }
 
 // ============================================================================
-// Nodes
+// System Prompt
 // ============================================================================
 
 function generateMusicAssistantPrompt(memory: string = "None"): string {
@@ -156,26 +156,39 @@ Message history is also attached.
 `;
 }
 
-function createMusicAssistant(llmWithTools: any) {
-  return async function musicAssistant(state: z.infer<typeof StateAnnotation>) {
-    // Fetching long term memory
-    let memory = "None";
-    if (state.loadedMemory) {
-      memory = state.loadedMemory;
-    }
+// ============================================================================
+// Nodes
+// ============================================================================
 
-    // Instructions for our agent
-    const musicAssistantPrompt = generateMusicAssistantPrompt(memory);
+// Setup database
+const db = await setupDatabase();
 
-    // Invoke the model
-    const response = await llmWithTools.invoke([
-      new SystemMessage(musicAssistantPrompt),
-      ...state.messages,
-    ]);
+// Create tools
+const musicTools = await createMusicTools(db);
+const llmWithMusicTools = defaultModel.bindTools(musicTools);
 
-    // Update the state
-    return { messages: [response] };
-  };
+// Create tool node
+const musicToolNode = new ToolNode(musicTools);
+
+// Create music assistant node
+async function musicAssistant(state: z.infer<typeof StateAnnotation>) {
+  // Fetching long term memory
+  let memory = "None";
+  if (state.loadedMemory) {
+    memory = state.loadedMemory;
+  }
+
+  // Instructions for our agent
+  const musicAssistantPrompt = generateMusicAssistantPrompt(memory);
+
+  // Invoke the model
+  const response = await llmWithMusicTools.invoke([
+    new SystemMessage(musicAssistantPrompt),
+    ...state.messages,
+  ]);
+
+  // Update the state
+  return { messages: [response] };
 }
 
 // ============================================================================
@@ -199,22 +212,6 @@ function shouldContinue(state: z.infer<typeof StateAnnotation>): "continue" | "e
 // ============================================================================
 
 console.log("🎵 Creating Music Catalog Subagent...");
-
-// Setup database
-const db = await setupDatabase();
-
-// Initialize model
-const model = await initChatModel("openai:gpt-4o-mini");
-
-// Create tools
-const musicTools = await createMusicTools(db);
-const llmWithMusicTools = model.bindTools(musicTools);
-
-// Create tool node
-const musicToolNode = new ToolNode(musicTools);
-
-// Create assistant node
-const musicAssistant = createMusicAssistant(llmWithMusicTools);
 
 // Initialize memory stores
 const checkpointer = new MemorySaver();

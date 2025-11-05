@@ -1,7 +1,8 @@
 import "dotenv/config";
-import { initChatModel, tool } from "langchain";
+import { tool } from "langchain";
 import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
 import { createAgent } from "langchain";
+import { defaultModel } from "./utils";
 
 // ============================================================================
 // Tool Definition
@@ -45,7 +46,7 @@ const getWeather = tool(
 
 // Create the agent
 const agent = createAgent({
-  model: "openai:gpt-4o-mini",
+  model: defaultModel,
   tools: [getWeather],
   systemPrompt: "You are a helpful weather assistant. Use the get_weather tool to check weather for cities.",
 });

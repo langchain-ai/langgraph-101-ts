@@ -1,9 +1,9 @@
 import "dotenv/config";
-import { initChatModel, tool } from "langchain";
+import { tool } from "langchain";
 import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
 import { createAgent } from "langchain";
 import { SqlDatabase } from "@langchain/classic/sql_db";
-import { setupDatabase, StateAnnotation } from "./utils.js";
+import { setupDatabase, StateAnnotation, defaultModel } from "./utils.js";
 import { getCurrentTaskInput } from "@langchain/langgraph";
 
 
@@ -138,15 +138,12 @@ console.log("💰 Creating Invoice Information Subagent...");
 // Setup database
 const db = await setupDatabase();
 
-// Initialize model
-const model = await initChatModel("openai:gpt-4o-mini");
-
 // Create tools
 const invoiceTools = await createInvoiceTools(db);
 
 // Create the agent with shared state schema
 const agent = createAgent({
-  model,
+  model: defaultModel,
   tools: invoiceTools,
   systemPrompt: invoiceSubagentPrompt,
   stateSchema: StateAnnotation,

@@ -1,12 +1,12 @@
 import "dotenv/config";
-import { initChatModel, tool } from "langchain";
+import { tool } from "langchain";
 import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
 import { HumanMessage } from "langchain";
 import { MemorySaver, InMemoryStore, getCurrentTaskInput } from "@langchain/langgraph";
 import { createAgent } from "langchain";
 import { graph as musicCatalogSubagent } from "./01-music_subagent.js";
 import { graph as invoiceInformationSubagent } from "./02-invoice_subagent.js";
-import { StateAnnotation } from "./utils.js";
+import { StateAnnotation, defaultModel } from "./utils.js";
 
 // ============================================================================
 // System Prompt
@@ -84,16 +84,13 @@ const callMusicCatalogSubagent = tool(
 
 console.log("👔 Creating Supervisor Agent...");
 
-// Initialize model
-const model = await initChatModel("openai:gpt-4o-mini");
-
 // Initialize memory stores
 const checkpointer = new MemorySaver();
 const inMemoryStore = new InMemoryStore();
 
 // Create the supervisor agent
-const supervisor = createAgent({
-  model,
+export const supervisor = createAgent({
+  model: defaultModel,
   tools: [callInvoiceInformationSubagent, callMusicCatalogSubagent],
   systemPrompt: supervisorPrompt,
   stateSchema: StateAnnotation,
