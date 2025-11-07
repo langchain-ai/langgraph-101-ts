@@ -72,7 +72,7 @@ This workshop contains 6 agents in the `/agents` folder, each demonstrating prog
 **Concepts**: Basic agent creation, tools, and simple workflows
 
 A simple weather agent that introduces fundamental LangGraph concepts:
-- Creating an agent with `createAgent()` from `langchain`
+- Creating an agent with `createAgent()`
 - Defining and using tools with the `tool()` function
 - Exporting graphs for LangGraph Studio
 
