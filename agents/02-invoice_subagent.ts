@@ -1,11 +1,9 @@
 import "dotenv/config";
-import { tool } from "langchain";
-import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
-import { createAgent } from "langchain";
+import { z } from "zod/v3";
+import { createAgent, tool } from "langchain";
 import { SqlDatabase } from "@langchain/classic/sql_db";
-import { setupDatabase, StateAnnotation, defaultModel } from "./utils.js";
+import { setupDatabase, AgentState, defaultModel } from "./utils.js";
 import { getCurrentTaskInput } from "@langchain/langgraph";
-
 
 // ============================================================================
 // Tools
@@ -15,21 +13,23 @@ async function createInvoiceTools(db: SqlDatabase) {
   const getInvoicesByCustomerSortedByDate = tool(
     async () => {
       // Get customerId from the graph's state
-      const state = await getCurrentTaskInput() as { customerId?: number };
+      const state = await getCurrentTaskInput<AgentState>();
       const customerId = state.customerId;
-      
+
       if (!customerId) {
         return "Error: Customer ID not found in state. Customer must be verified first.";
       }
-      
+
       const query = `SELECT * FROM Invoice WHERE CustomerId = ${customerId} ORDER BY InvoiceDate DESC;`;
       const rawResult = await db.run(query);
-      const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
+      const result =
+        typeof rawResult === "string" ? JSON.parse(rawResult) : rawResult;
       return JSON.stringify(result);
     },
     {
       name: "get_invoices_by_customer_sorted_by_date",
-      description: "Look up all invoices for the current customer. The invoices are sorted in descending order by invoice date. The customer ID is automatically retrieved from the state.",
+      description:
+        "Look up all invoices for the current customer. The invoices are sorted in descending order by invoice date. The customer ID is automatically retrieved from the state.",
       schema: z.object({}),
     }
   );
@@ -37,13 +37,13 @@ async function createInvoiceTools(db: SqlDatabase) {
   const getInvoicesSortedByUnitPrice = tool(
     async () => {
       // Get customerId from the graph's state
-      const state = await getCurrentTaskInput() as { customerId?: number };
+      const state = await getCurrentTaskInput<AgentState>();
       const customerId = state.customerId;
-      
+
       if (!customerId) {
         return "Error: Customer ID not found in state. Customer must be verified first.";
       }
-      
+
       const query = `
         SELECT Invoice.*, InvoiceLine.UnitPrice
         FROM Invoice
@@ -52,26 +52,28 @@ async function createInvoiceTools(db: SqlDatabase) {
         ORDER BY InvoiceLine.UnitPrice DESC;
       `;
       const rawResult = await db.run(query);
-      const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
+      const result =
+        typeof rawResult === "string" ? JSON.parse(rawResult) : rawResult;
       return JSON.stringify(result);
     },
     {
       name: "get_invoices_sorted_by_unit_price",
-      description: "Use this tool when the customer wants to know the details of one of their invoices based on the unit price/cost. This tool looks up all invoices for the current customer and sorts by unit price. The customer ID is automatically retrieved from the state.",
+      description:
+        "Use this tool when the customer wants to know the details of one of their invoices based on the unit price/cost. This tool looks up all invoices for the current customer and sorts by unit price. The customer ID is automatically retrieved from the state.",
       schema: z.object({}),
     }
   );
 
   const getEmployeeByInvoiceAndCustomer = tool(
-    async ({ invoiceId }: { invoiceId: number }) => {
+    async ({ invoiceId }) => {
       // Get customerId from the graph's state
-      const state = await getCurrentTaskInput() as { customerId?: number };
+      const state = await getCurrentTaskInput<AgentState>();
       const customerId = state.customerId;
-      
+
       if (!customerId) {
         return "Error: Customer ID not found in state. Customer must be verified first.";
       }
-      
+
       const query = `
         SELECT Employee.FirstName, Employee.Title, Employee.Email
         FROM Employee
@@ -80,8 +82,9 @@ async function createInvoiceTools(db: SqlDatabase) {
         WHERE Invoice.InvoiceId = ${invoiceId} AND Invoice.CustomerId = ${customerId};
       `;
       const rawResult = await db.run(query);
-      const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
-      
+      const result =
+        typeof rawResult === "string" ? JSON.parse(rawResult) : rawResult;
+
       if (!result || result.length === 0) {
         return `No employee found for invoice ID ${invoiceId} and customer identifier ${customerId}.`;
       }
@@ -89,14 +92,19 @@ async function createInvoiceTools(db: SqlDatabase) {
     },
     {
       name: "get_employee_by_invoice_and_customer",
-      description: "This tool will take in an invoice ID and return the employee information associated with the invoice. The customer ID is automatically retrieved from the state.",
+      description:
+        "This tool will take in an invoice ID and return the employee information associated with the invoice. The customer ID is automatically retrieved from the state.",
       schema: z.object({
         invoiceId: z.number().describe("The ID of the specific invoice"),
       }),
     }
   );
 
-  return [getInvoicesByCustomerSortedByDate, getInvoicesSortedByUnitPrice, getEmployeeByInvoiceAndCustomer];
+  return [
+    getInvoicesByCustomerSortedByDate,
+    getInvoicesSortedByUnitPrice,
+    getEmployeeByInvoiceAndCustomer,
+  ];
 }
 
 // ============================================================================
@@ -146,7 +154,7 @@ const agent = createAgent({
   model: defaultModel,
   tools: invoiceTools,
   systemPrompt: invoiceSubagentPrompt,
-  stateSchema: StateAnnotation,
+  stateSchema: AgentState,
 });
 
 console.log("✅ Invoice Information Subagent created successfully!");
@@ -156,4 +164,3 @@ console.log("✅ Invoice Information Subagent created successfully!");
 // ============================================================================
 
 export const graph = agent.graph;
-

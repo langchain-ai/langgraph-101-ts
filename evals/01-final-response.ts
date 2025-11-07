@@ -2,7 +2,6 @@ import "dotenv/config";
 import { Client } from "langsmith";
 import { evaluate } from "langsmith/evaluation";
 import { v4 as uuidv4 } from "uuid";
-import { HumanMessage } from "langchain";
 import { Command } from "@langchain/langgraph";
 import { createLLMAsJudge } from "openevals";
 import { CORRECTNESS_PROMPT } from "openevals/prompts";
@@ -20,44 +19,79 @@ const DATASET_NAME = "LangGraph 101 Multi-Agent: Final Response (TypeScript)";
 const examples = [
   {
     inputs: {
-      messages: [{ role: "user", content: "My name is Aaron Mitchell. Account ID is 32. My number associated with my account is +1 (204) 452-6452. I am trying to find the invoice number for my most recent song purchase. Could you help me with it?" }]
+      messages: [
+        {
+          role: "user",
+          content:
+            "My name is Aaron Mitchell. Account ID is 32. My number associated with my account is +1 (204) 452-6452. I am trying to find the invoice number for my most recent song purchase. Could you help me with it?",
+        },
+      ],
     },
     outputs: {
-      messages: [{ role: "ai", content: "The Invoice ID of your most recent purchase was 342." }]
-    }
+      messages: [
+        {
+          role: "ai",
+          content: "The Invoice ID of your most recent purchase was 342.",
+        },
+      ],
+    },
   },
   {
     inputs: {
-      messages: [{ role: "user", content: "I'd like a refund." }]
+      messages: [{ role: "user", content: "I'd like a refund." }],
     },
     outputs: {
-      messages: [{ role: "ai", content: "I've confirmed your account. Could you please provide more details about the purchase you would like refunded?" }]
-    }
+      messages: [
+        {
+          role: "ai",
+          content:
+            "I've confirmed your account. Could you please provide more details about the purchase you would like refunded?",
+        },
+      ],
+    },
   },
   {
     inputs: {
-      messages: [{ role: "user", content: "Who recorded Wish You Were Here again?" }]
+      messages: [
+        { role: "user", content: "Who recorded Wish You Were Here again?" },
+      ],
     },
     outputs: {
-      messages: [{ role: "ai", content: "Wish You Were Here is an album by Pink Floyd" }]
-    }
+      messages: [
+        { role: "ai", content: "Wish You Were Here is an album by Pink Floyd" },
+      ],
+    },
   },
   {
     inputs: {
-      messages: [{ role: "user", content: "What albums do you have by Coldplay?" }]
+      messages: [
+        { role: "user", content: "What albums do you have by Coldplay?" },
+      ],
     },
     outputs: {
-      messages: [{ role: "ai", content: "I searched our music store's database, and there are no Coldplay albums available in our catalog at the moment." }]
-    }
+      messages: [
+        {
+          role: "ai",
+          content:
+            "I searched our music store's database, and there are no Coldplay albums available in our catalog at the moment.",
+        },
+      ],
+    },
   },
   {
     inputs: {
-      messages: [{ role: "user", content: "How do I become a billionaire?" }]
+      messages: [{ role: "user", content: "How do I become a billionaire?" }],
     },
     outputs: {
-      messages: [{ role: "ai", content: "I'm here to help with questions regarding our digital music store. If you have any questions about our music catalog or previous purchases, feel free to ask!" }]
-    }
-  }
+      messages: [
+        {
+          role: "ai",
+          content:
+            "I'm here to help with questions regarding our digital music store. If you have any questions about our music catalog or previous purchases, feel free to ask!",
+        },
+      ],
+    },
+  },
 ];
 
 // ============================================================================
@@ -67,7 +101,9 @@ const examples = [
 /**
  * Runs the multi-agent graph with human-in-the-loop handling
  */
-async function runGraph(inputs: Record<string, any>): Promise<Record<string, any>> {
+async function runGraph(
+  inputs: Record<string, any>
+): Promise<Record<string, any>> {
   const threadId = uuidv4();
   const config = { configurable: { thread_id: threadId, user_id: "10" } };
 
@@ -127,16 +163,26 @@ False means that the agent's response fails to meet professional standards in on
 Explain your reasoning in a step-by-step manner to ensure your evaluation is thorough and fair.`;
 
 const ProfessionalismGradeSchema = z.object({
-  reasoning: z.string().describe("Explain your step-by-step reasoning for the professionalism assessment, covering tone, language, structure, courtesy, boundaries, and helpfulness."),
-  isProfessional: z.boolean().describe("True if the agent response meets professional standards, otherwise False."),
+  reasoning: z
+    .string()
+    .describe(
+      "Explain your step-by-step reasoning for the professionalism assessment, covering tone, language, structure, courtesy, boundaries, and helpfulness."
+    ),
+  isProfessional: z
+    .boolean()
+    .describe(
+      "True if the agent response meets professional standards, otherwise False."
+    ),
 });
 
-const professionalismGraderLlm = evalModel.withStructuredOutput(ProfessionalismGradeSchema);
+const professionalismGraderLlm = evalModel.withStructuredOutput(
+  ProfessionalismGradeSchema
+);
 
 async function professionalismEvaluator({
   outputs,
   referenceOutputs,
-  inputs
+  inputs,
 }: {
   outputs: Record<string, any>;
   referenceOutputs?: Record<string, any>;
@@ -145,16 +191,16 @@ async function professionalismEvaluator({
   const userContext = `QUESTION: ${JSON.stringify(inputs?.messages)}
 GROUND TRUTH RESPONSE: ${JSON.stringify(referenceOutputs?.messages)}
 AGENT RESPONSE: ${JSON.stringify(outputs?.messages)}`;
-  
+
   const grade: any = await professionalismGraderLlm.invoke([
-    { role: "system", content: professionalismGraderInstructions }, 
-    { role: "user", content: userContext }
+    { role: "system", content: professionalismGraderInstructions },
+    { role: "user", content: userContext },
   ]);
-  
+
   return {
     key: "professionalism",
     score: grade.isProfessional ? 1 : 0,
-    comment: grade.reasoning
+    comment: grade.reasoning,
   };
 }
 
@@ -164,26 +210,26 @@ AGENT RESPONSE: ${JSON.stringify(outputs?.messages)}`;
 
 async function main() {
   console.log("🚀 Starting Final Response Evaluation\n");
-  
+
   // Initialize LangSmith client
   const client = new Client();
-  
+
   // Create or get dataset
   await getOrCreateDataset(client, DATASET_NAME, examples);
-  
+
   console.log("\n⏳ Running evaluation (this may take a few minutes)...\n");
-  
+
   // Run evaluation
-  const experimentResults = await evaluate((inputs: any) => runGraph(inputs), {
+  await evaluate((inputs: any) => runGraph(inputs), {
     data: DATASET_NAME,
     evaluators: [correctnessEvaluator, professionalismEvaluator],
     experimentPrefix: "agent-e2e",
     maxConcurrency: 3,
     client, // Pass client explicitly
   });
-  
+
   logEvaluationSummary("Final Response (E2E)", DATASET_NAME);
-  
+
   console.log("📈 Check LangSmith for detailed results and visualizations");
 }
 

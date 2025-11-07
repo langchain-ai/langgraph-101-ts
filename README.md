@@ -62,17 +62,17 @@ This command will:
 - Use `--tunnel` if you're using Safari (which blocks localhost connections)
 - Use `--no-browser` to skip automatically opening the browser
 
-Once Studio is running, you'll see all workshop agents available in the sidebar. Start with "LG101 Agent" and progress through the numbered agents (00-05) to follow the workshop curriculum.
+Once Studio is running, you'll see all workshop agents available in the sidebar. Start with "LC101 Agent" and progress through the numbered agents (00-05) to follow the workshop curriculum.
 
 ## Workshop Structure
 
 This workshop contains 6 agents in the `/agents` folder, each demonstrating progressively more advanced LangGraph concepts. Work through them in order for the best learning experience.
 
-### Agent 00: LG101 Agent (`00-lg101_agent.ts`)
+### Agent 00: LC101 Agent (`00-lc101_agent.ts`)
 **Concepts**: Basic agent creation, tools, and simple workflows
 
 A simple weather agent that introduces fundamental LangGraph concepts:
-- Creating an agent with `createAgent()`
+- Creating an agent with `createAgent()` from `langchain`
 - Defining and using tools with the `tool()` function
 - Exporting graphs for LangGraph Studio
 
