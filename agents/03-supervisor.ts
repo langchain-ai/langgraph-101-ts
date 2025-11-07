@@ -1,12 +1,14 @@
 import "dotenv/config";
-import { tool } from "langchain";
-import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
-import { HumanMessage } from "langchain";
-import { MemorySaver, InMemoryStore, getCurrentTaskInput } from "@langchain/langgraph";
-import { createAgent } from "langchain";
+import { z } from "zod/v3";
+import { createAgent, tool, HumanMessage } from "langchain";
+import {
+  MemorySaver,
+  InMemoryStore,
+  getCurrentTaskInput,
+} from "@langchain/langgraph";
 import { graph as musicCatalogSubagent } from "./01-music_subagent.js";
 import { graph as invoiceInformationSubagent } from "./02-invoice_subagent.js";
-import { StateAnnotation, defaultModel } from "./utils.js";
+import { AgentState, defaultModel } from "./utils.js";
 
 // ============================================================================
 // System Prompt
@@ -40,21 +42,22 @@ from the database. The customer ID is automatically retrieved from the state, so
 
 // Create supervisor tools that delegate to subagents
 const callInvoiceInformationSubagent = tool(
-  async ({ query }: { query: string }) => {
+  async ({ query }) => {
     // Get the customerId from the current state
-    const state = await getCurrentTaskInput() as { customerId?: number };
-    
+    const state = await getCurrentTaskInput<AgentState>();
+
     // Pass the query and customerId through state to the invoice subagent
     const result: any = await invoiceInformationSubagent.invoke({
       messages: [new HumanMessage(query)],
       customerId: state.customerId,
     });
-    const subagentResponse = result.messages[result.messages.length - 1].content;
+    const subagentResponse = result.messages.at(-1).content;
     return subagentResponse;
   },
   {
     name: "invoice_information_subagent",
-    description: "An agent that can assist with all invoice-related queries. It can retrieve information about a customer's past purchases or invoices. The customer ID is automatically retrieved from the state.",
+    description:
+      "An agent that can assist with all invoice-related queries. It can retrieve information about a customer's past purchases or invoices. The customer ID is automatically retrieved from the state.",
     schema: z.object({
       query: z.string().describe("The query to send to the invoice subagent"),
     }),
@@ -62,18 +65,21 @@ const callInvoiceInformationSubagent = tool(
 );
 
 const callMusicCatalogSubagent = tool(
-  async ({ query }: { query: string }) => {
+  async ({ query }) => {
     const result: any = await musicCatalogSubagent.invoke({
       messages: [new HumanMessage(query)],
     });
-    const subagentResponse = result.messages[result.messages.length - 1].content;
+    const subagentResponse = result.messages.at(-1).content;
     return subagentResponse;
   },
   {
     name: "music_catalog_subagent",
-    description: "An agent that can assist with all music-related queries. This agent has access to user's saved music preferences. It can also retrieve information about the digital music store's music catalog (albums, tracks, songs, etc.) from the database.",
+    description:
+      "An agent that can assist with all music-related queries. This agent has access to user's saved music preferences. It can also retrieve information about the digital music store's music catalog (albums, tracks, songs, etc.) from the database.",
     schema: z.object({
-      query: z.string().describe("The query to send to the music catalog subagent"),
+      query: z
+        .string()
+        .describe("The query to send to the music catalog subagent"),
     }),
   }
 );
@@ -93,7 +99,7 @@ export const supervisor = createAgent({
   model: defaultModel,
   tools: [callInvoiceInformationSubagent, callMusicCatalogSubagent],
   systemPrompt: supervisorPrompt,
-  stateSchema: StateAnnotation,
+  stateSchema: AgentState,
   checkpointer,
   store: inMemoryStore,
 });
@@ -105,4 +111,3 @@ console.log("✅ Supervisor Agent created successfully!");
 // ============================================================================
 
 export const graph = supervisor.graph;
-

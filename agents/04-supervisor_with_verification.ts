@@ -1,10 +1,18 @@
 import "dotenv/config";
-import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
+import { z } from "zod/v3";
 import { BaseMessage, HumanMessage, SystemMessage, AIMessage } from "langchain";
-import { MessagesZodMeta, StateGraph, START, END, MemorySaver, InMemoryStore, interrupt } from "@langchain/langgraph";
+import {
+  MessagesZodMeta,
+  StateGraph,
+  START,
+  END,
+  MemorySaver,
+  InMemoryStore,
+  interrupt,
+} from "@langchain/langgraph";
 import { withLangGraph } from "@langchain/langgraph/zod";
 import { SqlDatabase } from "@langchain/classic/sql_db";
-import { setupDatabase, StateAnnotation, defaultModel } from "./utils.js";
+import { setupDatabase, defaultModel, AgentState } from "./utils.js";
 import { supervisor } from "./03-supervisor.js";
 
 // ============================================================================
@@ -21,52 +29,60 @@ const InputStateAnnotation = z.object({
 // ============================================================================
 
 // Helper function to look up customer ID from various identifiers
-async function getCustomerIdFromIdentifier(identifier: string, db: SqlDatabase): Promise<number | null> {
+async function getCustomerIdFromIdentifier(
+  identifier: string,
+  db: SqlDatabase
+): Promise<number | null> {
   // Direct customer ID (numeric)
   if (/^\d+$/.test(identifier)) {
     return parseInt(identifier);
   }
-  
+
   // Phone number lookup
   if (identifier.startsWith("+")) {
     // Normalize by removing spaces and parentheses for flexible matching
-    const normalizedInput = identifier.replace(/[\s\(\)]/g, '');
-    
+    const normalizedInput = identifier.replace(/[\s\(\)]/g, "");
+
     // Try exact match first
     const query = `SELECT CustomerId FROM Customer WHERE Phone = '${identifier}';`;
     const rawResult = await db.run(query);
-    const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
-    
+    const result =
+      typeof rawResult === "string" ? JSON.parse(rawResult) : rawResult;
+
     if (result && result.length > 0) {
       return result[0].CustomerId;
     }
-    
+
     // Try normalized match if exact match fails
     const queryAll = `SELECT CustomerId, Phone FROM Customer WHERE Phone LIKE '+%';`;
     const rawAllPhones = await db.run(queryAll);
-    const allPhones = typeof rawAllPhones === 'string' ? JSON.parse(rawAllPhones) : rawAllPhones;
-    
+    const allPhones =
+      typeof rawAllPhones === "string"
+        ? JSON.parse(rawAllPhones)
+        : rawAllPhones;
+
     for (const row of allPhones) {
       if (row.Phone) {
-        const normalizedDb = row.Phone.replace(/[\s\(\)]/g, '');
+        const normalizedDb = row.Phone.replace(/[\s\(\)]/g, "");
         if (normalizedDb === normalizedInput) {
           return row.CustomerId;
         }
       }
     }
   }
-  
+
   // Email lookup
   if (identifier.includes("@")) {
     const query = `SELECT CustomerId FROM Customer WHERE Email = '${identifier}';`;
     const rawResult = await db.run(query);
-    const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
-    
+    const result =
+      typeof rawResult === "string" ? JSON.parse(rawResult) : rawResult;
+
     if (result && result.length > 0) {
       return result[0].CustomerId;
     }
   }
-  
+
   return null;
 }
 
@@ -80,7 +96,11 @@ async function getCustomerIdFromIdentifier(identifier: string, db: SqlDatabase):
 
 // Schema for parsing user-provided account information
 const UserInputSchema = z.object({
-  identifier: z.string().describe("Identifier, which can be a customer ID, email, or phone number."),
+  identifier: z
+    .string()
+    .describe(
+      "Identifier, which can be a customer ID, email, or phone number."
+    ),
 });
 
 // ============================================================================
@@ -91,7 +111,7 @@ const UserInputSchema = z.object({
 // Conditional Edge
 // ============================================================================
 
-function shouldInterrupt(state: z.infer<typeof StateAnnotation>): "continue" | "interrupt" {
+function shouldInterrupt(state: AgentState): "continue" | "interrupt" {
   if (state.customerId !== undefined) {
     return "continue";
   } else {
@@ -108,10 +128,6 @@ console.log("👔 Creating Supervisor with Verification...");
 // Setup database
 const db = await setupDatabase();
 
-// Initialize memory stores
-const checkpointer = new MemorySaver();
-const inMemoryStore = new InMemoryStore();
-
 // Create structured output model for extracting customer identifier
 const structuredLlm = defaultModel.withStructuredOutput(UserInputSchema);
 
@@ -120,7 +136,7 @@ Only extract the customer's account information from the message history.
 If they haven't provided the information yet, return an empty string for the identifier`;
 
 // Verify info node - validates customer identity
-async function verifyInfo(state: z.infer<typeof StateAnnotation>) {
+async function verifyInfo(state: AgentState) {
   if (state.customerId === undefined) {
     const systemInstructions = `
 You are a music store agent, where you are trying to verify the customer identity as the first step of the customer support process. 
@@ -133,22 +149,17 @@ IMPORTANT: Do NOT ask any questions about their request, or make any attempt at 
 `;
 
     const userInput = state.messages[state.messages.length - 1];
-    
+
     // Parse for customer ID
     const parsedInfo = await structuredLlm.invoke([
       new SystemMessage(structuredSystemPrompt),
       userInput,
     ]);
-    
-    // Extract details
-    const identifier = parsedInfo.identifier;
-    
-    let customerId: number | null = null;
-    // Attempt to find the customer ID
-    if (identifier) {
-      customerId = await getCustomerIdFromIdentifier(identifier, db);
-    }
-    
+
+    const customerId = parsedInfo.identifier
+      ? await getCustomerIdFromIdentifier(parsedInfo.identifier, db)
+      : null;
+
     if (customerId !== null) {
       const intentMessage = new AIMessage(
         `Thank you for providing your information! I was able to verify your account with customer id ${customerId}.`
@@ -171,21 +182,28 @@ IMPORTANT: Do NOT ask any questions about their request, or make any attempt at 
 }
 
 // Human input node - prompts for user input during interrupt
-function humanInput(state: z.infer<typeof StateAnnotation>) {
+function humanInput() {
   const userInput = interrupt("Please provide input.");
-  return { messages: [new HumanMessage(userInput as string)] };
+  return { messages: [new HumanMessage(userInput)] };
 }
 
 // Supervisor node - wrapper for the supervisor agent
-async function supervisorNode(state: z.infer<typeof StateAnnotation>) {
-  const result = await supervisor.invoke(state as any);
+async function supervisorNode(state: AgentState) {
+  const result = await supervisor.invoke({
+    ...state,
+    customerId: state.customerId,
+  });
   return {
     messages: result.messages,
   };
 }
 
+// Initialize memory stores
+const checkpointer = new MemorySaver();
+const inMemoryStore = new InMemoryStore();
+
 // Build the graph with human-in-the-loop
-const multiAgentVerify = new StateGraph(StateAnnotation, {
+const multiAgentVerify = new StateGraph(AgentState, {
   input: InputStateAnnotation,
 })
   .addNode("verify_info", verifyInfo)
@@ -206,4 +224,3 @@ export const graph = multiAgentVerify.compile({
 });
 
 console.log("✅ Supervisor with Verification created successfully!");
-

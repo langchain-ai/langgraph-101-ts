@@ -1,11 +1,16 @@
 import "dotenv/config";
-import { tool } from "langchain";
-import { z } from "zod/v3"; // Import from zod/v3 for LangGraph compatibility
-import { SystemMessage, AIMessage } from "langchain";
-import { StateGraph, START, END, MemorySaver, InMemoryStore } from "@langchain/langgraph";
+import { z } from "zod/v3";
+import { SystemMessage, AIMessage, tool } from "langchain";
+import {
+  StateGraph,
+  START,
+  END,
+  MemorySaver,
+  InMemoryStore,
+} from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { SqlDatabase } from "@langchain/classic/sql_db";
-import { setupDatabase, StateAnnotation, defaultModel } from "./utils.js";
+import { setupDatabase, AgentState, defaultModel } from "./utils.js";
 
 // ============================================================================
 // Tools
@@ -13,7 +18,7 @@ import { setupDatabase, StateAnnotation, defaultModel } from "./utils.js";
 
 async function createMusicTools(db: SqlDatabase) {
   const getAlbumsByArtist = tool(
-    async ({ artist }: { artist: string }) => {
+    async ({ artist }) => {
       const query = `
         SELECT Album.Title, Artist.Name 
         FROM Album 
@@ -22,7 +27,8 @@ async function createMusicTools(db: SqlDatabase) {
         LIMIT 8;
       `;
       const rawResult = await db.run(query);
-      const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
+      const result =
+        typeof rawResult === "string" ? JSON.parse(rawResult) : rawResult;
       return JSON.stringify(result);
     },
     {
@@ -35,7 +41,7 @@ async function createMusicTools(db: SqlDatabase) {
   );
 
   const getTracksByArtist = tool(
-    async ({ artist }: { artist: string }) => {
+    async ({ artist }) => {
       const query = `
         SELECT Track.Name as SongName, Artist.Name as ArtistName 
         FROM Album 
@@ -45,7 +51,8 @@ async function createMusicTools(db: SqlDatabase) {
         LIMIT 8;
       `;
       const rawResult = await db.run(query);
-      const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
+      const result =
+        typeof rawResult === "string" ? JSON.parse(rawResult) : rawResult;
       return JSON.stringify(result);
     },
     {
@@ -58,18 +65,21 @@ async function createMusicTools(db: SqlDatabase) {
   );
 
   const getSongsByGenre = tool(
-    async ({ genre }: { genre: string }) => {
+    async ({ genre }) => {
       // First get genre ID
       const genreQuery = `SELECT GenreId FROM Genre WHERE Name LIKE '%${genre}%' LIMIT 8;`;
       const rawGenreResult = await db.run(genreQuery);
-      const genreResult = typeof rawGenreResult === 'string' ? JSON.parse(rawGenreResult) : rawGenreResult;
-      
+      const genreResult =
+        typeof rawGenreResult === "string"
+          ? JSON.parse(rawGenreResult)
+          : rawGenreResult;
+
       if (!genreResult || genreResult.length === 0) {
         return `No songs found for the genre: ${genre}`;
       }
-      
+
       const genreIds = genreResult.map((row: any) => row.GenreId).join(", ");
-      
+
       const songsQuery = `
         SELECT Track.Name as SongName, Artist.Name as ArtistName
         FROM Track
@@ -79,9 +89,10 @@ async function createMusicTools(db: SqlDatabase) {
         GROUP BY Artist.Name
         LIMIT 8;
       `;
-      
+
       const rawSongs = await db.run(songsQuery);
-      const songs = typeof rawSongs === 'string' ? JSON.parse(rawSongs) : rawSongs;
+      const songs =
+        typeof rawSongs === "string" ? JSON.parse(rawSongs) : rawSongs;
       return JSON.stringify(songs);
     },
     {
@@ -94,10 +105,11 @@ async function createMusicTools(db: SqlDatabase) {
   );
 
   const checkForSongs = tool(
-    async ({ songTitle }: { songTitle: string }) => {
+    async ({ songTitle }) => {
       const query = `SELECT * FROM Track WHERE Name LIKE '%${songTitle}%' LIMIT 8;`;
       const rawResult = await db.run(query);
-      const result = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
+      const result =
+        typeof rawResult === "string" ? JSON.parse(rawResult) : rawResult;
       return JSON.stringify(result);
     },
     {
@@ -171,12 +183,8 @@ const llmWithMusicTools = defaultModel.bindTools(musicTools);
 const musicToolNode = new ToolNode(musicTools);
 
 // Create music assistant node
-async function musicAssistant(state: z.infer<typeof StateAnnotation>) {
-  // Fetching long term memory
-  let memory = "None";
-  if (state.loadedMemory) {
-    memory = state.loadedMemory;
-  }
+async function musicAssistant(state: AgentState) {
+  const memory = state.loadedMemory ?? "None";
 
   // Instructions for our agent
   const musicAssistantPrompt = generateMusicAssistantPrompt(memory);
@@ -195,12 +203,16 @@ async function musicAssistant(state: z.infer<typeof StateAnnotation>) {
 // Conditional Edge
 // ============================================================================
 
-function shouldContinue(state: z.infer<typeof StateAnnotation>): "continue" | "end" {
+function shouldContinue(state: AgentState): "continue" | "end" {
   const messages = state.messages;
-  const lastMessage = messages[messages.length - 1] as AIMessage;
+  const lastMessage = messages.at(-1);
 
   // If there is no function call, then we finish
-  if (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0) {
+  if (
+    AIMessage.isInstance(lastMessage) &&
+    lastMessage.tool_calls &&
+    lastMessage.tool_calls.length > 0
+  ) {
     return "end";
   }
   // Otherwise if there is, we continue
@@ -218,7 +230,7 @@ const checkpointer = new MemorySaver();
 const inMemoryStore = new InMemoryStore();
 
 // Create the workflow
-const musicWorkflow = new StateGraph(StateAnnotation)
+const musicWorkflow = new StateGraph(AgentState)
   .addNode("music_assistant", musicAssistant)
   .addNode("music_tool_node", musicToolNode)
   .addEdge(START, "music_assistant")
@@ -235,4 +247,3 @@ export const graph = musicWorkflow.compile({
 });
 
 console.log("✅ Music Catalog Subagent created successfully!");
-
