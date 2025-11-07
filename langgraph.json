@@ -1,7 +1,7 @@
 {
   "dockerfile_lines": [],
   "graphs": {
-    "LC101 Agent": "./agents/00-lc101_agent.ts:graph",
+    "LG101 Agent": "./agents/00-lg101_agent.ts:graph",
     "Music Catalog Subagent": "./agents/01-music_subagent.ts:graph",
     "Invoice Subagent": "./agents/02-invoice_subagent.ts:graph",
     "Supervisor": "./agents/03-supervisor.ts:graph",
