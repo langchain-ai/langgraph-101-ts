@@ -16,10 +16,36 @@ import { setupDatabase, defaultModel, AgentState } from "./utils.js";
 import { supervisor } from "./03-supervisor.js";
 
 // ============================================================================
+// HUMAN-IN-THE-LOOP WITH CUSTOMER VERIFICATION
+// ============================================================================
+//
+// This file builds on the supervisor pattern (03) by adding a verification step.
+// Before the supervisor can help with invoices, the customer must verify their identity.
+//
+// KEY CONCEPTS:
+// - Human-in-the-loop: Pausing execution to get user input
+// - interrupt(): LangGraph function that pauses and waits for input
+// - Conditional routing based on verification state
+// - Structured output parsing to extract customer information
+//
+// WORKFLOW:
+// 1. User sends a query
+// 2. verify_info node checks if customer is verified
+// 3. If NOT verified → interrupt() to ask for credentials
+// 4. If verified → continue to supervisor
+//
+// This pattern is useful for:
+// - Authentication/authorization
+// - Confirmation prompts
+// - Collecting required information
+// - Approval workflows
+
+// ============================================================================
 // State Definitions
 // ============================================================================
 
 // Define Input State using Zod
+// This limits what fields can be provided when invoking the graph
 const InputStateAnnotation = z.object({
   messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
 });
@@ -27,6 +53,9 @@ const InputStateAnnotation = z.object({
 // ============================================================================
 // Customer Verification Helpers
 // ============================================================================
+//
+// These helper functions handle the customer verification logic.
+// They can look up customers by ID, email, or phone number.
 
 // Helper function to look up customer ID from various identifiers
 async function getCustomerIdFromIdentifier(
@@ -93,6 +122,10 @@ async function getCustomerIdFromIdentifier(
 // ============================================================================
 // Schemas
 // ============================================================================
+//
+// STRUCTURED OUTPUT PARSING
+// We use Zod schemas with withStructuredOutput() to extract specific information
+// from user messages. This is more reliable than regex or string parsing.
 
 // Schema for parsing user-provided account information
 const UserInputSchema = z.object({
@@ -106,16 +139,22 @@ const UserInputSchema = z.object({
 // ============================================================================
 // Nodes
 // ============================================================================
+//
+// The nodes in this graph implement the verification workflow.
 
 // ============================================================================
 // Conditional Edge
 // ============================================================================
+//
+// CONDITIONAL ROUTING FOR VERIFICATION
+// This function decides whether to continue to the supervisor or interrupt for verification.
 
 function shouldInterrupt(state: AgentState): "continue" | "interrupt" {
+  // If customerId exists in state, customer is verified
   if (state.customerId !== undefined) {
-    return "continue";
+    return "continue";  // Proceed to supervisor
   } else {
-    return "interrupt";
+    return "interrupt";  // Need to collect credentials
   }
 }
 
@@ -129,13 +168,15 @@ console.log("👔 Creating Supervisor with Verification...");
 const db = await setupDatabase();
 
 // Create structured output model for extracting customer identifier
+// withStructuredOutput() makes the LLM return data matching our schema
 const structuredLlm = defaultModel.withStructuredOutput(UserInputSchema);
 
 const structuredSystemPrompt = `You are a customer service representative responsible for extracting customer identifier.
 Only extract the customer's account information from the message history. 
 If they haven't provided the information yet, return an empty string for the identifier`;
 
-// Verify info node - validates customer identity
+// VERIFY INFO NODE
+// This node attempts to extract and verify the customer's identity
 async function verifyInfo(state: AgentState) {
   if (state.customerId === undefined) {
     const systemInstructions = `
@@ -150,17 +191,19 @@ IMPORTANT: Do NOT ask any questions about their request, or make any attempt at 
 
     const userInput = state.messages[state.messages.length - 1];
 
-    // Parse for customer ID
+    // Use structured output to extract identifier from user's message
     const parsedInfo = await structuredLlm.invoke([
       new SystemMessage(structuredSystemPrompt),
       userInput,
     ]);
 
+    // Attempt to look up the customer using the extracted identifier
     const customerId = parsedInfo.identifier
       ? await getCustomerIdFromIdentifier(parsedInfo.identifier, db)
       : null;
 
     if (customerId !== null) {
+      // Success! Customer verified
       const intentMessage = new AIMessage(
         `Thank you for providing your information! I was able to verify your account with customer id ${customerId}.`
       );
@@ -169,6 +212,7 @@ IMPORTANT: Do NOT ask any questions about their request, or make any attempt at 
         messages: [intentMessage],
       };
     } else {
+      // Couldn't verify - ask for credentials or clarification
       const response = await defaultModel.invoke([
         new SystemMessage(systemInstructions),
         ...state.messages,
@@ -176,18 +220,22 @@ IMPORTANT: Do NOT ask any questions about their request, or make any attempt at 
       return { messages: [response] };
     }
   } else {
-    // Customer ID already exists, pass through
+    // Customer ID already exists in state - they're already verified
     return {};
   }
 }
 
-// Human input node - prompts for user input during interrupt
+// HUMAN INPUT NODE
+// This node uses interrupt() to pause execution and collect user input
 function humanInput() {
+  // interrupt() pauses the graph and returns control to the caller
+  // The caller must provide input to resume execution
   const userInput = interrupt("Please provide input.");
   return { messages: [new HumanMessage(userInput)] };
 }
 
-// Supervisor node - wrapper for the supervisor agent
+// SUPERVISOR NODE
+// Simple wrapper that calls the supervisor from 03-supervisor.ts
 async function supervisorNode(state: AgentState) {
   const result = await supervisor.invoke({
     ...state,
@@ -202,24 +250,32 @@ async function supervisorNode(state: AgentState) {
 const checkpointer = new MemorySaver();
 const inMemoryStore = new InMemoryStore();
 
-// Build the graph with human-in-the-loop
+// Build the graph with human-in-the-loop verification
 const multiAgentVerify = new StateGraph(AgentState, {
-  input: InputStateAnnotation,
+  input: InputStateAnnotation,  // Restricts what can be passed when invoking
 })
   .addNode("verify_info", verifyInfo)
   .addNode("human_input", humanInput)
   .addNode("supervisor", supervisorNode)
+  
+  // Start with verification
   .addEdge(START, "verify_info")
+  
+  // Route based on verification status
   .addConditionalEdges("verify_info", shouldInterrupt, {
-    continue: "supervisor",
-    interrupt: "human_input",
+    continue: "supervisor",      // Customer verified → proceed
+    interrupt: "human_input",    // Need credentials → interrupt
   })
+  
+  // After human input, try verification again
   .addEdge("human_input", "verify_info")
+  
+  // After supervisor responds, we're done
   .addEdge("supervisor", END);
 
 // Compile and export the graph
 export const graph = multiAgentVerify.compile({
-  checkpointer,
+  checkpointer,        // Required for interrupt() to work
   store: inMemoryStore,
 });
 

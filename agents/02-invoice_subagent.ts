@@ -6,13 +6,32 @@ import { setupDatabase, AgentState, defaultModel } from "./utils.js";
 import { getCurrentTaskInput } from "@langchain/langgraph";
 
 // ============================================================================
+// ACCESSING STATE INSIDE TOOLS - A POWERFUL SECURITY PATTERN
+// ============================================================================
+//
+// This file demonstrates a critical pattern: accessing graph state from within tools.
+// 
+// WHY IS THIS IMPORTANT?
+// Instead of asking the LLM to pass sensitive data (like customer IDs) as tool parameters,
+// we can read them directly from the graph's state. This has major benefits:
+//
+// 1. SECURITY: The LLM never sees or handles sensitive identifiers
+// 2. RELIABILITY: No risk of the LLM passing wrong/hallucinated IDs
+// 3. CLEANER: Tools don't need extra parameters for context that's already in state
+//
+// KEY FUNCTION: getCurrentTaskInput()
+// This function lets you access the current graph state from anywhere, including inside tools.
+// It's like having a "global context" that all tools can read from.
+
+// ============================================================================
 // Tools
 // ============================================================================
 
 async function createInvoiceTools(db: SqlDatabase) {
   const getInvoicesByCustomerSortedByDate = tool(
     async () => {
-      // Get customerId from the graph's state
+      // 🔑 KEY PATTERN: Get customerId from the graph's state, NOT from LLM
+      // This ensures the LLM can't accidentally (or maliciously) pass the wrong customer ID
       const state = await getCurrentTaskInput<AgentState>();
       const customerId = state.customerId;
 
@@ -20,6 +39,7 @@ async function createInvoiceTools(db: SqlDatabase) {
         return "Error: Customer ID not found in state. Customer must be verified first.";
       }
 
+      // Now we can safely use the verified customer ID
       const query = `SELECT * FROM Invoice WHERE CustomerId = ${customerId} ORDER BY InvoiceDate DESC;`;
       const rawResult = await db.run(query);
       const result =
@@ -30,13 +50,15 @@ async function createInvoiceTools(db: SqlDatabase) {
       name: "get_invoices_by_customer_sorted_by_date",
       description:
         "Look up all invoices for the current customer. The invoices are sorted in descending order by invoice date. The customer ID is automatically retrieved from the state.",
+      // Notice: schema is EMPTY - no parameters needed!
+      // The LLM just calls this tool with no arguments
       schema: z.object({}),
     }
   );
 
   const getInvoicesSortedByUnitPrice = tool(
     async () => {
-      // Get customerId from the graph's state
+      // Same pattern: read customer ID from state instead of asking LLM for it
       const state = await getCurrentTaskInput<AgentState>();
       const customerId = state.customerId;
 
@@ -66,7 +88,8 @@ async function createInvoiceTools(db: SqlDatabase) {
 
   const getEmployeeByInvoiceAndCustomer = tool(
     async ({ invoiceId }) => {
-      // Get customerId from the graph's state
+      // This tool DOES take a parameter (invoiceId) from the LLM
+      // But still reads customerId from state for security
       const state = await getCurrentTaskInput<AgentState>();
       const customerId = state.customerId;
 
@@ -110,6 +133,9 @@ async function createInvoiceTools(db: SqlDatabase) {
 // ============================================================================
 // System Prompt
 // ============================================================================
+//
+// The system prompt guides this specialized subagent's behavior.
+// Notice it explains to the LLM that customer ID is handled automatically.
 
 const invoiceSubagentPrompt = `
 <important_background>
@@ -154,6 +180,11 @@ const agent = createAgent({
   model: defaultModel,
   tools: invoiceTools,
   systemPrompt: invoiceSubagentPrompt,
+  
+  // 🔑 CRITICAL: stateSchema parameter
+  // By providing AgentState, we enable tools to access state via getCurrentTaskInput()
+  // This connects the agent's state to the tools, allowing them to read customerId
+  // Without this, getCurrentTaskInput() wouldn't work!
   stateSchema: AgentState,
 });
 
@@ -162,5 +193,9 @@ console.log("✅ Invoice Information Subagent created successfully!");
 // ============================================================================
 // Export
 // ============================================================================
+//
+// This agent will be imported and used as a tool in the supervisor workflow.
+// The supervisor will pass the customerId in state, and this agent's tools
+// will automatically have access to it via getCurrentTaskInput().
 
 export const graph = agent.graph;

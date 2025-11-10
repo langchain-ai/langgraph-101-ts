@@ -16,6 +16,30 @@ import { setupDatabase, defaultModel, AgentState } from "./utils.js";
 import { supervisor } from "./03-supervisor.js";
 
 // ============================================================================
+// LONG-TERM MEMORY WITH INMEMORYSTORE
+// ============================================================================
+//
+// This file builds on 04 by adding persistent memory management.
+// The system now remembers user preferences across conversations!
+//
+// KEY CONCEPTS:
+// - Long-term memory: Persisting information beyond a single conversation
+// - InMemoryStore: LangGraph's key-value store for memory
+// - Namespace-based organization: Storing data by user ID
+// - Memory lifecycle: Loading → Using → Updating
+//
+// WORKFLOW:
+// 1. Verify customer (same as 04)
+// 2. Load memory: Retrieve saved preferences for this customer
+// 3. Supervisor: Uses preferences to personalize responses
+// 4. Create memory: Analyze conversation and update saved preferences
+//
+// WHY THIS MATTERS:
+// - Personalization: Agent remembers user preferences
+// - Context preservation: Past conversations inform current ones
+// - Better UX: Users don't need to repeat themselves
+
+// ============================================================================
 // State Definitions
 // ============================================================================
 
@@ -27,6 +51,10 @@ const InputStateAnnotation = z.object({
 // ============================================================================
 // Memory Schema
 // ============================================================================
+//
+// STRUCTURED MEMORY
+// We define a schema for what we want to remember about each user.
+// This ensures consistent memory structure across users.
 
 const UserProfileSchema = z.object({
   customerId: z.string().describe("The customer ID of the customer"),
@@ -98,6 +126,10 @@ async function getCustomerIdFromIdentifier(
 // ============================================================================
 // System Prompts
 // ============================================================================
+//
+// MEMORY ANALYSIS PROMPT
+// This prompt instructs an LLM to analyze conversations and extract
+// information worth remembering (like music preferences).
 
 const createMemoryPrompt = `You are an expert analyst that is observing a conversation that has taken place between a customer and a customer support assistant. The customer support assistant works for a digital music store, and has utilized a multi-agent team to answer the customer's request. 
 You are tasked with analyzing the conversation that has taken place between the customer and the customer support assistant, and updating the memory profile associated with the customer. 
@@ -149,6 +181,8 @@ const UserInputSchema = z.object({
 // ============================================================================
 // Helper Functions
 // ============================================================================
+//
+// Helper to format memory data for display/use in prompts
 
 function formatUserMemory(userData: any): string {
   const profile = userData.memory;
@@ -166,6 +200,13 @@ function formatUserMemory(userData: any): string {
 // ============================================================================
 // Nodes
 // ============================================================================
+//
+// This graph has 5 nodes:
+// 1. verify_info: Customer verification (same as 04)
+// 2. human_input: Collect user input during interrupt (same as 04)
+// 3. load_memory: NEW - Load saved preferences from InMemoryStore
+// 4. supervisor: Execute supervisor with loaded memory context
+// 5. create_memory: NEW - Analyze conversation and update saved preferences
 
 // ============================================================================
 // Conditional Edge
@@ -199,7 +240,8 @@ const structuredSystemPrompt = `You are a customer service representative respon
 Only extract the customer's account information from the message history. 
 If they haven't provided the information yet, return an empty string for the identifier`;
 
-// Verify info node - validates customer identity
+// VERIFY INFO NODE
+// Same as in 04 - validates customer identity
 async function verifyInfo(state: AgentState) {
   if (state.customerId === undefined) {
     const systemInstructions = `
@@ -246,22 +288,28 @@ IMPORTANT: Do NOT ask any questions about their request, or make any attempt at 
   }
 }
 
-// Human input node - prompts for user input during interrupt
+// HUMAN INPUT NODE
+// Same as in 04 - prompts for user input during interrupt
 function humanInput(state: AgentState) {
   const userInput = interrupt("Please provide input.");
   return { messages: [new HumanMessage(userInput as string)] };
 }
 
-// Load memory node - retrieves user preferences from long-term memory
+// LOAD MEMORY NODE
+// Retrieves saved user preferences from InMemoryStore
 async function loadMemory(state: AgentState) {
   const userId = state.customerId?.toString();
   if (!userId) {
+    // No user ID - no memory to load
     return {
       loadedMemory: "",
       messages: [new HumanMessage("user_preferences: none")],
     };
   }
 
+  // NAMESPACE PATTERN: ["memory_profile", userId]
+  // InMemoryStore organizes data hierarchically using namespaces
+  // This keeps each user's data separate
   const namespace = ["memory_profile", userId];
   const existingMemory: any = await inMemoryStore.get(namespace, "user_memory");
   let formattedMemory = "";
@@ -270,7 +318,7 @@ async function loadMemory(state: AgentState) {
     formattedMemory = formatUserMemory(existingMemory.value);
   }
 
-  // Add a message to the conversation with user preferences
+  // Add memory to conversation context so supervisor can use it
   const preferencesMessage = formattedMemory
     ? `user_preferences: ${formattedMemory}`
     : "user_preferences: none";
@@ -281,33 +329,43 @@ async function loadMemory(state: AgentState) {
   };
 }
 
-// Create memory node - saves user music preferences to long-term memory
+// CREATE MEMORY NODE
+// Analyzes the conversation and updates saved user preferences
 async function createMemory(state: AgentState) {
   const userId = state.customerId?.toString();
   if (!userId) {
-    return {};
+    return {};  // Can't save memory without a user ID
   }
 
   const namespace = ["memory_profile", userId];
   const formattedMemory = state.loadedMemory || "";
 
+  // Use an LLM to analyze the conversation and extract preferences
   const formattedSystemMessage = new SystemMessage(
     createMemoryPrompt
       .replace("{conversation}", JSON.stringify(state.messages))
       .replace("{memory_profile}", formattedMemory)
   );
 
+  // Get structured output matching UserProfileSchema
+  // Note: We include both SystemMessage and HumanMessage for compatibility
+  // with Anthropic models, which require at least one user message
   const updatedMemory = await defaultModel
     .withStructuredOutput(UserProfileSchema)
-    .invoke([formattedSystemMessage]);
+    .invoke([
+      formattedSystemMessage,
+      new HumanMessage("Please analyze the conversation and update the memory profile.")
+    ]);
 
+  // Save updated memory back to the store
   const key = "user_memory";
   await inMemoryStore.put(namespace, key, { memory: updatedMemory });
 
   return {};
 }
 
-// Supervisor node - wrapper for the supervisor agent
+// SUPERVISOR NODE
+// Wrapper for the supervisor agent
 async function supervisorNode(state: AgentState) {
   const result = await supervisor.invoke(state as any);
   return {
@@ -316,6 +374,22 @@ async function supervisorNode(state: AgentState) {
 }
 
 // Build the final multi-agent graph with memory
+//
+// COMPLETE GRAPH FLOW:
+// START → verify_info → [conditional]
+//                           ↓ not verified
+//                       human_input → (loop back to verify_info)
+//                           ↓ verified
+//                       load_memory → supervisor → create_memory → END
+//
+// MEMORY LIFECYCLE:
+// 1. After verification, load existing memory
+// 2. Memory gets added to conversation context
+// 3. Supervisor uses memory to personalize responses
+// 4. After supervisor responds, analyze conversation
+// 5. Update memory with new preferences discovered
+//
+// This creates a complete loop where the agent learns from every interaction!
 const multiAgentFinal = new StateGraph(AgentState, {
   input: InputStateAnnotation,
 })
@@ -324,20 +398,28 @@ const multiAgentFinal = new StateGraph(AgentState, {
   .addNode("load_memory", loadMemory)
   .addNode("supervisor", supervisorNode)
   .addNode("create_memory", createMemory)
+  
+  // Start with verification
   .addEdge(START, "verify_info")
+  
+  // Route based on verification
   .addConditionalEdges("verify_info", shouldInterrupt, {
-    continue: "load_memory",
-    interrupt: "human_input",
+    continue: "load_memory",   // Verified → load their preferences
+    interrupt: "human_input",   // Not verified → collect credentials
   })
+  
+  // Verification loop
   .addEdge("human_input", "verify_info")
+  
+  // Memory → Supervisor → Update Memory → Done
   .addEdge("load_memory", "supervisor")
   .addEdge("supervisor", "create_memory")
   .addEdge("create_memory", END);
 
 // Compile and export the graph
 export const graph = multiAgentFinal.compile({
-  checkpointer,
-  store: inMemoryStore,
+  checkpointer,        // Short-term: conversation history
+  store: inMemoryStore,  // Long-term: user preferences and memory
 });
 
 console.log("✅ Supervisor with Verification and Memory created successfully!");

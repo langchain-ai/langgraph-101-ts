@@ -7,13 +7,29 @@ import { MessagesZodMeta } from "@langchain/langgraph";
 import { withLangGraph } from "@langchain/langgraph/zod";
 
 // ============================================================================
+// SHARED UTILITIES FOR ALL AGENTS
+// ============================================================================
+//
+// This file contains shared resources used across all agent examples:
+// - Model initialization
+// - State schema definitions
+// - Database setup
+//
+// Centralizing these reduces duplication and ensures consistency.
+
+// ============================================================================
 // Model Initialization
 // ============================================================================
+//
+// USING initChatModel()
+// This is LangChain's universal chat model initializer.
+// It works with any major LLM provider using a simple "provider:model" format.
+//
+// Learn more: https://js.langchain.com/docs/integrations/chat/
 
 /**
- * Default model used across all agents
+ * Default model used across all agents in this workshop
  */
-
 export const defaultModel = await initChatModel("openai:o3-mini");
 
 /**
@@ -45,17 +61,36 @@ export const defaultModel = await initChatModel("openai:o3-mini");
 /**
  * Helper to initialize a specific model
  * Use this when you want a different model than the default in a specific agent
+ * 
+ * Example: const gpt4 = await getModel("openai:gpt-4o");
  */
 export async function getModel(modelName: string = "openai:03-mini") {
   return await initChatModel(modelName);
 }
+
 // ============================================================================
 // Shared State Definition
 // ============================================================================
+//
+// STATE IN LANGGRAPH
+// State is how nodes communicate in LangGraph. It's like a shared context
+// that flows through the graph, with each node reading from and writing to it.
+//
+// WHY ZOD?
+// We use Zod schemas to define state for type-safety and validation.
+// The withLangGraph() wrapper adds special metadata for message handling.
+//
+// Learn more: https://langchain-ai.github.io/langgraphjs/concepts/low_level/#state
 
 /**
  * Shared state schema used across all agents
  * This ensures consistent state structure for message passing and context sharing
+ * 
+ * Fields:
+ * - messages: Conversation history (required)
+ * - customerId: Verified customer identifier (optional)
+ * - loadedMemory: User preferences loaded from memory store
+ * - remainingSteps: Maximum steps before timeout (prevents infinite loops)
  */
 export const AgentState = z.object({
   messages: withLangGraph(z.custom<BaseMessage[]>(), MessagesZodMeta),
@@ -69,15 +104,33 @@ export type AgentState = z.infer<typeof AgentState>;
 // ============================================================================
 // Database Setup
 // ============================================================================
+//
+// WORKSHOP DATABASE
+// For this workshop, we use the Chinook database - a sample music store database.
+// It includes tables for artists, albums, tracks, invoices, customers, etc.
+//
+// WHY SQL.JS?
+// sql.js runs SQLite entirely in memory - no database server needed!
+// Perfect for demos and workshops.
+//
+// PRODUCTION NOTE:
+// In production, you'd connect to a real database (PostgreSQL, MySQL, etc.)
+// using the appropriate TypeORM configuration.
 
 /**
  * Sets up and initializes the Chinook database using sql.js
+ * 
+ * The Chinook database is a sample music store database with:
+ * - Artists, Albums, Tracks
+ * - Customers, Invoices
+ * - Employees, Playlists, Genres
+ * 
  * @returns Promise<SqlDatabase> - Initialized SqlDatabase instance
  */
 export async function setupDatabase(): Promise<SqlDatabase> {
   console.log("📦 Setting up Chinook database...");
 
-  // Download and execute the Chinook SQL script from GitHub
+  // Download the Chinook SQL script from GitHub
   const sqlScriptUrl =
     "https://raw.githubusercontent.com/lerocha/chinook-database/master/ChinookDatabase/DataSources/Chinook_Sqlite.sql";
 
@@ -89,26 +142,28 @@ export async function setupDatabase(): Promise<SqlDatabase> {
   }
   const sqlScript = await response.text();
 
-  // Initialize sql.js and create database from SQL script
+  // Initialize sql.js (SQLite compiled to WebAssembly)
   const SQL = await initSqlJs();
   const sqlJsDb = new SQL.Database();
 
-  // Execute the SQL script to create and populate the database
+  // Execute the SQL script to create and populate all tables
   sqlJsDb.exec(sqlScript);
 
-  // Export database to buffer for TypeORM
+  // Export database to buffer so TypeORM can use it
   const dbBuffer = sqlJsDb.export();
 
-  // Create TypeORM DataSource with sql.js
+  // Create TypeORM DataSource
+  // TypeORM provides a nice abstraction over raw SQL
   const datasource = new DataSource({
     type: "sqljs",
     database: dbBuffer,
-    synchronize: false,
+    synchronize: false,  // Don't auto-migrate schema
   });
 
   // Initialize the DataSource
   await datasource.initialize();
 
+  // Wrap in LangChain's SqlDatabase for agent use
   const db = await SqlDatabase.fromDataSourceParams({
     appDataSource: datasource,
   });

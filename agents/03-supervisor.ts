@@ -11,6 +11,30 @@ import { graph as invoiceInformationSubagent } from "./02-invoice_subagent.js";
 import { AgentState, defaultModel } from "./utils.js";
 
 // ============================================================================
+// SUBAGENTS AS TOOLS - THE RECOMMENDED PATTERN
+// ============================================================================
+//
+// This file demonstrates a powerful and clean architecture pattern:
+// wrapping subagents as tools that the supervisor can call.
+//
+// WHY THIS PATTERN?
+// - MODULARITY: Each subagent is independent and can be developed/tested separately
+// - SIMPLICITY: The supervisor just delegates to specialized subagents like any other tool
+// - REUSABILITY: Subagents can be reused in different workflows
+// - SCALABILITY: Easy to add new specialized subagents
+//
+// HOW IT WORKS:
+// 1. Import compiled subagent graphs (from 01 and 02)
+// 2. Wrap each subagent in a tool function
+// 3. The tool invokes the subagent graph and returns its response
+// 4. Supervisor uses createAgent() with these subagent tools
+//
+// COMPARISON TO OTHER PATTERNS:
+// - Simpler than traditional hierarchical supervisor patterns
+// - More flexible than monolithic agents
+// - Better separation of concerns than "swarm" approaches
+
+// ============================================================================
 // System Prompt
 // ============================================================================
 
@@ -37,20 +61,29 @@ from the database. The customer ID is automatically retrieved from the state, so
 `;
 
 // ============================================================================
-// Supervisor Tools
+// Supervisor Tools - Wrapping Subagents
 // ============================================================================
+//
+// Here's where the magic happens: we wrap each subagent graph as a tool.
+// The supervisor will see these as regular tools, but they're actually
+// calling entire agent workflows!
 
-// Create supervisor tools that delegate to subagents
+// INVOICE SUBAGENT TOOL
+// This tool wraps the invoice subagent and handles state passing
 const callInvoiceInformationSubagent = tool(
   async ({ query }) => {
-    // Get the customerId from the current state
+    // Get the customerId from the supervisor's state
+    // We use getCurrentTaskInput() to access it (same pattern as in 02-invoice_subagent.ts)
     const state = await getCurrentTaskInput<AgentState>();
 
-    // Pass the query and customerId through state to the invoice subagent
+    // Invoke the invoice subagent graph with the query and state
+    // The customerId is passed through state so the subagent's tools can access it
     const result: any = await invoiceInformationSubagent.invoke({
       messages: [new HumanMessage(query)],
-      customerId: state.customerId,
+      customerId: state.customerId,  // Pass context through state
     });
+    
+    // Extract the subagent's final response
     const subagentResponse = result.messages.at(-1).content;
     return subagentResponse;
   },
@@ -64,11 +97,17 @@ const callInvoiceInformationSubagent = tool(
   }
 );
 
+// MUSIC CATALOG SUBAGENT TOOL
+// This tool wraps the music catalog subagent
 const callMusicCatalogSubagent = tool(
   async ({ query }) => {
+    // Invoke the music catalog subagent graph
+    // This subagent doesn't need customerId, so we just pass the query
     const result: any = await musicCatalogSubagent.invoke({
       messages: [new HumanMessage(query)],
     });
+    
+    // Extract and return the subagent's response
     const subagentResponse = result.messages.at(-1).content;
     return subagentResponse;
   },
@@ -87,19 +126,36 @@ const callMusicCatalogSubagent = tool(
 // ============================================================================
 // Agent Creation
 // ============================================================================
+//
+// THE SUPERVISOR AGENT
+// The supervisor is just a regular agent created with createAgent().
+// What makes it special is that its "tools" are actually other agents!
+//
+// ARCHITECTURE BENEFITS:
+// - The supervisor focuses on routing/delegation
+// - Each subagent is a domain expert
+// - Clean separation of concerns
+// - Easy to test and maintain
 
 console.log("👔 Creating Supervisor Agent...");
 
-// Initialize memory stores
+// Initialize memory stores for conversation persistence
 const checkpointer = new MemorySaver();
 const inMemoryStore = new InMemoryStore();
 
 // Create the supervisor agent
 export const supervisor = createAgent({
   model: defaultModel,
+  
+  // The "tools" are actually subagent wrappers!
+  // To the LLM, they look like regular tools
   tools: [callInvoiceInformationSubagent, callMusicCatalogSubagent],
+  
   systemPrompt: supervisorPrompt,
+  
+  // stateSchema enables getCurrentTaskInput() in tool wrappers
   stateSchema: AgentState,
+  
   checkpointer,
   store: inMemoryStore,
 });
@@ -109,5 +165,8 @@ console.log("✅ Supervisor Agent created successfully!");
 // ============================================================================
 // Export
 // ============================================================================
+//
+// This supervisor can be used standalone or as part of a larger workflow
+// (like in 04-supervisor_with_verification.ts)
 
 export const graph = supervisor.graph;
