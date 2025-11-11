@@ -252,26 +252,21 @@ async function musicAssistant(state: AgentState) {
 // This function determines whether the agent should:
 // - "continue" → Go to tool node (if LLM requested tool calls)
 // - "end" → Stop execution (if LLM provided a final answer)
-//
-// NOTE: The logic looks inverted (tool_calls → "end") but that's because
-// this conditional is on the agent node. When tool calls exist, we continue
-// to the tool node (which the graph maps "end" to in this case).
-// The naming can be confusing - focus on the routing behavior!
 
 function shouldContinue(state: AgentState): "continue" | "end" {
   const messages = state.messages;
   const lastMessage = messages.at(-1);
 
-  // If there ARE tool calls, route to "end" (which actually goes to tool node)
+  // If there ARE tool calls, continue to tool node
   if (
     AIMessage.isInstance(lastMessage) &&
     lastMessage.tool_calls &&
     lastMessage.tool_calls.length > 0
   ) {
-    return "end";
+    return "continue";
   }
-  // If NO tool calls, route to "continue" (which actually ends the graph)
-  return "continue";
+  // If NO tool calls, end the graph
+  return "end";
 }
 
 // ============================================================================
@@ -312,7 +307,6 @@ const musicWorkflow = new StateGraph(AgentState)
   .addEdge(START, "music_assistant")
   
   // Add conditional routing from agent
-  // Note: The naming is confusing here - "continue" goes to tools, "end" finishes
   .addConditionalEdges("music_assistant", shouldContinue, {
     continue: "music_tool_node",  // If tools needed, execute them
     end: END,                       // If no tools, we're done
