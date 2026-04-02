@@ -17,13 +17,7 @@ To tackle this problem, we've built [LangGraph](https://langchain-ai.github.io/l
 
 ## Pre-work
 
-### 1. Clone the repo and navigate to this workshop
-```bash
-git clone https://github.com/langchain-ai/langgraph-101-ts.git
-cd langgraph-101-ts/workshops/101
-```
-
-### 2. Set up your environment 
+### 1. Set up your environment 
 Create a `.env` file with your API keys:
 ```bash
 # Copy the example file and fill in your keys
@@ -33,7 +27,7 @@ Then add your API Keys
 
 If you run into issues acquiring the necessary API keys due to any restrictions (ex. corporate policy), contact your LangChain representative and we'll find a work-around!
 
-### 3. Install dependencies
+### 2. Install dependencies
 Ensure you have Node.js (v20+) and pnpm installed:
 ```bash
 # Install pnpm if you haven't already
@@ -43,7 +37,7 @@ npm install -g pnpm
 pnpm install
 ```
 
-### 4. Launch LangGraph Studio
+### 3. Launch LangGraph Studio
 
 LangGraph Studio is a visual IDE for developing and debugging LangGraph applications. To run the workshop agents:
 
