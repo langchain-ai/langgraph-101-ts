@@ -246,12 +246,39 @@ As agents do more work, their context fills up with intermediate tool calls. **S
 **With subagents:** the main agent delegates via `task()` and only sees the final summary.
 
 ```typescript
+const RESEARCHER_INSTRUCTIONS = `You are a research assistant conducting research. Today's date is ${currentDate}.
+
+<Task>
+Use tools to gather information about the research topic.
+</Task>
+
+<Hard Limits>
+- Simple queries: Use 2-3 search tool calls maximum
+- Complex queries: Use up to 5 search tool calls maximum
+</Hard Limits>
+
+<Output Format>
+Structure your findings with:
+- Clear headings
+- Inline citations [1], [2], [3]
+- Sources section at the end
+</Output Format>
+`;
+
+const researchSubagent: SubAgent = {
+  name: "research-agent",
+  description: "Delegate research tasks. Give one topic at a time.",
+  systemPrompt: RESEARCHER_INSTRUCTIONS,
+  tools: [tavilySearch],
+};
+
 export const agent = createDeepAgent({
   model,
   tools: [tavilySearch],
   systemPrompt: `You are a research coordinator.
 Delegate research to the research-agent subagent using the task() tool.
-NEVER search directly - always delegate to the research-agent.`,
+NEVER search directly - always delegate to the research-agent.
+Synthesize findings and write a report to /final_report.md.`,
   subagents: [researchSubagent],
 });
 ```
