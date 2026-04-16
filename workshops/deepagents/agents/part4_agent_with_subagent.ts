@@ -9,8 +9,8 @@
  * result, not intermediate tool calls.
  */
 
-import { createDeepAgent } from "deepagents";
-import { model, tavilySearch, researchSubagent } from "./_shared.js";
+import { createDeepAgent, SubAgent } from "deepagents";
+import { model, tavilySearch } from "./_shared.js";
 
 const ORCHESTRATOR_INSTRUCTIONS = `You are a research coordinator.
 
@@ -24,6 +24,33 @@ The research-agent will handle all web searches and return summarized findings.
 
 When referencing file paths, use backtick formatting like \`path/file.md\` instead of markdown links.
 `;
+
+const RESEARCHER_INSTRUCTIONS = `You are a research assistant conducting research. Today's date is ${currentDate}.
+
+<Task>
+Use tools to gather information about the research topic.
+</Task>
+
+<Hard Limits>
+- Simple queries: Use 2-3 search tool calls maximum
+- Complex queries: Use up to 5 search tool calls maximum
+</Hard Limits>
+
+<Output Format>
+Structure your findings with:
+- Clear headings
+- Inline citations [1], [2], [3]
+- Sources section at the end
+</Output Format>
+`;
+
+const researchSubagent: SubAgent = {
+  name: "research-agent",
+  description: "Delegate research tasks. Give one topic at a time.",
+  systemPrompt: RESEARCHER_INSTRUCTIONS,
+  tools: [tavilySearch],
+};
+
 
 export const agent = createDeepAgent({
   model,
