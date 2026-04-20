@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.sandbox/
+.workspace/
+
+# LangGraph API
+.langgraph_api

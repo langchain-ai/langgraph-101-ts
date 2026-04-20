@@ -1,0 +1,21 @@
+{
+  "node_version": "20",
+  "graphs": {
+    "201-1 Basic Deep Agent": "./agents/part1_basic_agent.ts:agent",
+    "201-2 Deep Agent with Tools": "./agents/part2_agent_with_tools.ts:agent",
+    "201-3a StateBackend (Ephemeral)": "./agents/part3a_state_backend.ts:agent",
+    "201-3b FilesystemBackend (Disk)": "./agents/part3b_filesystem_backend.ts:agent",
+    "201-3c CompositeBackend (Hybrid)": "./agents/part3c_composite_backend.ts:agent",
+    "201-3d StoreBackend (Persistent)": "./agents/part3d_store_backend.ts:agent",
+    "201-4 Deep Agent with Subagent": "./agents/part4_agent_with_subagent.ts:agent",
+    "201-5 Deep Agent with Middleware": "./agents/part5_agent_with_middleware.ts:agent",
+    "201-6 Deep Agent with HITL": "./agents/part6_agent_with_hitl.ts:agent",
+    "201-7a Basic Long-Term Memory": "./agents/part7a_basic_memory.ts:agent",
+    "201-7b Memory Types (Semantic/Episodic/Procedural)": "./agents/part7b_memory_types.ts:agent",
+    "201-7c Namespace Scoping (Per-User)": "./agents/part7c_namespace_scoping.ts:agent",
+    "201-8 Deep Agent with Skills": "./agents/part8_agent_with_skills.ts:agent",
+    "201-9 Complete Deep Agent": "./agents/part9_complete_agent.ts:agent"
+  },
+  "env": ".env",
+  "dependencies": ["."]
+}

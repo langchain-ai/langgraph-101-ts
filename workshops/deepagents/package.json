@@ -1,0 +1,20 @@
+{
+  "name": "deep-agents-tutorial-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "deepagents": "latest",
+    "@langchain/core": "^1.1.33",
+    "@langchain/langgraph": "^1.1.4",
+    "@langchain/openai": "^1.2.8",
+    "@langchain/tavily": "^1.2.0",
+    "langchain": "^1.2.37",
+    "zod": "^4.3.6",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@types/node": "^22.0.0"
+  }
+}
