@@ -35,7 +35,7 @@
     "sql.js": "^1.13.0",
     "sqlite3": "^5.1.7",
     "typeorm": "^0.3.28",
-    "uuid": "^13.0.0",
+    "uuid": "^14.0.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
