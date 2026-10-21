@@ -11,7 +11,7 @@ overrides:
   file-type: '>=21.3.1'
   '@tootallnate/once': '>=3.0.1'
   uuid@<11.1.1: 11.1.1
-  hono@<4.13.7: 4.13.7
+  hono@<4.13.11: 4.13.11
   js-yaml@>=4.0.0 <4.3.2: 4.3.2
   '@hono/node-server@<2.0.10': 2.0.10
   postcss@<=8.5.22: 8.5.23
@@ -342,12 +342,12 @@ packages:
     resolution: {integrity: sha512-ZcnNVhKTmyDJeg0UlnZjvM73JBsTAuhrH/J4fjwGOw59PwOW51r4J+p6CsKZWXdKSme4MFqU62CZMOsdDrU4CA==}
     engines: {node: '>=20'}
     peerDependencies:
-      hono: 4.13.7
+      hono: 4.13.11
 
   '@hono/zod-validator@0.7.6':
     resolution: {integrity: sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==}
     peerDependencies:
-      hono: 4.13.7
+      hono: 4.13.11
       zod: ^3.25.0 || ^4.0.0
 
   '@ibm-cloud/watsonx-ai@1.7.0':
@@ -1720,8 +1720,8 @@ packages:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
 
-  hono@4.13.7:
-    resolution: {integrity: sha512-c8/gF9ac8Y78/agExVocyLevgR+JlpNB444Py0FSX8pJoPdYUfUzRcXtYEYGwt6l19qIlVZPN5Mfsw9jFShmQQ==}
+  hono@4.13.11:
+    resolution: {integrity: sha512-/SMX/RQNJn7oNmFwH6DtwDqcrzZU2otm1FD6OJe2cWF6cfy/F8hq0XVBv7xW3FTJshRQwuBnXHDq2kNsdZnshg==}
     engines: {node: '>=16.9.0'}
 
   http-cache-semantics@4.2.0:
@@ -3061,13 +3061,13 @@ snapshots:
 
   '@google/generative-ai@0.24.1': {}
 
-  '@hono/node-server@2.0.10(hono@4.13.7)':
+  '@hono/node-server@2.0.10(hono@4.13.11)':
     dependencies:
-      hono: 4.13.7
+      hono: 4.13.11
 
-  '@hono/zod-validator@0.7.6(hono@4.13.7)(zod@4.1.12)':
+  '@hono/zod-validator@0.7.6(hono@4.13.11)(zod@4.1.12)':
     dependencies:
-      hono: 4.13.7
+      hono: 4.13.11
       zod: 4.1.12
 
   '@ibm-cloud/watsonx-ai@1.7.0':
@@ -3218,8 +3218,8 @@ snapshots:
   '@langchain/langgraph-api@1.1.16(@langchain/core@1.1.28(openai@6.25.0(ws@8.21.0)(zod@4.1.12))(ws@8.21.0))(@langchain/langgraph-checkpoint@1.0.0(@langchain/core@1.1.28(openai@6.25.0(ws@8.21.0)(zod@4.1.12))(ws@8.21.0)))(@langchain/langgraph@1.0.1(@langchain/core@1.1.28(openai@6.25.0(ws@8.21.0)(zod@4.1.12))(ws@8.21.0))(zod-to-json-schema@3.25.2(zod@4.1.12))(zod@4.1.12))(openai@6.25.0(ws@8.21.0)(zod@4.1.12))(typescript@5.9.3)(ws@8.21.0)':
     dependencies:
       '@babel/code-frame': 7.27.1
-      '@hono/node-server': 2.0.10(hono@4.13.7)
-      '@hono/zod-validator': 0.7.6(hono@4.13.7)(zod@4.1.12)
+      '@hono/node-server': 2.0.10(hono@4.13.11)
+      '@hono/zod-validator': 0.7.6(hono@4.13.11)(zod@4.1.12)
       '@langchain/core': 1.1.28(openai@6.25.0(ws@8.21.0)(zod@4.1.12))(ws@8.21.0)
       '@langchain/langgraph': 1.0.1(@langchain/core@1.1.28(openai@6.25.0(ws@8.21.0)(zod@4.1.12))(ws@8.21.0))(zod-to-json-schema@3.25.2(zod@4.1.12))(zod@4.1.12)
       '@langchain/langgraph-checkpoint': 1.0.0(@langchain/core@1.1.28(openai@6.25.0(ws@8.21.0)(zod@4.1.12))(ws@8.21.0))
@@ -3229,7 +3229,7 @@ snapshots:
       dedent: 1.7.2
       dotenv: 16.6.1
       exit-hook: 4.0.0
-      hono: 4.13.7
+      hono: 4.13.11
       langsmith: 0.6.0(openai@6.25.0(ws@8.21.0)(zod@4.1.12))(ws@8.21.0)
       open: 10.2.0
       semver: 7.7.4
@@ -4244,7 +4244,7 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  hono@4.13.7: {}
+  hono@4.13.11: {}
 
   http-cache-semantics@4.2.0:
     optional: true
