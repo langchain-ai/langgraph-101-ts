@@ -10,7 +10,7 @@
     "@langchain/openai": "^1.2.8",
     "@langchain/tavily": "^1.2.0",
     "langchain": "^1.2.37",
-    "zod": "^4.3.6",
+    "zod": "^4.6.6",
     "dotenv": "^16.4.0"
   },
   "devDependencies": {
